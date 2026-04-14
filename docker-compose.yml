@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  tam-tracker:
+    build: .
+    container_name: tam-tram-tracker
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=3000
+      - GTFS_STATIC_URL=https://data.montpellier3m.fr/sites/default/files/ressources/TAM_MMM_GTFS.zip
+      - GTFS_REALTIME_URL=https://data.montpellier3m.fr/sites/default/files/ressources/TAM_MMM_GTFSRT.pb
+      - SQLITE_PATH=data/gtfs.db
+      - UPDATE_INTERVAL_MS=30000
+    restart: always

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAM Montpellier Tram Tracker</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        
+        .tram-icon {
+            border: 2px solid white; border-radius: 50%; display: flex;
+            align-items: center; justify-content: center; color: white;
+            font-weight: bold; font-size: 12px; text-shadow: 1px 1px 2px black;
+        }
+
+        /* --- STYLES DES PANNEAUX --- */
+        #controls, #search-box {
+            position: absolute; z-index: 1000; background: white;
+            padding: 12px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        #controls { top: 15px; right: 15px; display: flex; flex-direction: column; gap: 10px; }
+        
+        #search-box { top: 15px; left: 55px; /* Décalé pour laisser la place aux boutons de zoom +/- */ }
+        
+        #search-input {
+            width: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
+        }
+
+        #search-results {
+            max-height: 200px; overflow-y: auto; background: white;
+            border-radius: 0 0 4px 4px; list-style: none; padding: 0; margin: 0;
+            display: none; /* Caché par défaut */
+        }
+
+        #search-results li {
+            padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px;
+        }
+
+        #search-results li:hover { background: #f0f0f0; }
+
+        #controls label { cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div id="search-box">
+        <input type="text" id="search-input" placeholder="Rechercher un arrêt..." oninput="filterSearch()">
+        <ul id="search-results"></ul>
+    </div>
+
+    <div id="controls">
+        <label><input type="checkbox" id="check-trams" checked onchange="toggleFilters()"> 🚊 Trams</label>
+        <label><input type="checkbox" id="check-buses" onchange="toggleFilters()"> 🚌 Bus</label>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/ewoken/Leaflet.MovingMarker@master/MovingMarker.js"></script>
+
+    <script>
+        const map = L.map('map').setView([43.6107, 3.8767], 13);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap contributors, © CARTO'
+        }).addTo(map);
+
+        let markers = {};
+        let stationMarkers = {}; // Pour stocker les marqueurs des stations par leur nom
+        let showTrams = true;
+        let showBuses = false;
+        let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [] };
+
+        async function fetchShapes() {
+            try {
+                const response = await fetch('/api/shapes');
+                const geojson = await response.json();
+                L.geoJSON(geojson, {
+                    style: function(feature) {
+                        let couleur = '#888'; 
+                        const vals = Object.values(feature.properties).map(v => String(v).trim().toLowerCase());
+                        let num = null;
+                        if (vals.includes('1') || vals.includes('ligne 1')) { couleur = '#0055A4'; num = '1'; }
+                        if (vals.includes('2') || vals.includes('ligne 2')) { couleur = '#EE7F00'; num = '2'; }
+                        if (vals.includes('3') || vals.includes('ligne 3')) { couleur = '#A8A900'; num = '3'; }
+                        if (vals.includes('4') || vals.includes('ligne 4')) { couleur = '#8F6E3B'; num = '4'; }
+                        if (num && feature.geometry.type === 'LineString') tramLinesGeometry[num].push(feature);
+                        return { color: couleur, weight: 5, opacity: 0.6 };
+                    }
+                }).addTo(map);
+            } catch (e) {}
+        }
+
+        // --- RECHERCHE ---
+        function filterSearch() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const list = document.getElementById('search-results');
+            list.innerHTML = '';
+            
+            if (query.length < 2) { list.style.display = 'none'; return; }
+
+            const names = Object.keys(stationMarkers).filter(n => n.toLowerCase().includes(query));
+            
+            if (names.length > 0) {
+                list.style.display = 'block';
+                names.slice(0, 5).forEach(name => {
+                    const li = document.createElement('li');
+                    li.textContent = name;
+                    li.onclick = () => {
+                        const marker = stationMarkers[name];
+                        map.flyTo(marker.getLatLng(), 16); // Zoom fluide !
+                        marker.fire('click'); // Simule un clic pour ouvrir les horaires
+                        list.style.display = 'none';
+                        document.getElementById('search-input').value = name;
+                    };
+                    list.appendChild(li);
+                });
+            } else {
+                list.style.display = 'none';
+            }
+        }
+
+        async function fetchStops() {
+            try {
+                const response = await fetch('/api/stops');
+                const stations = await response.json();
+                stations.forEach(station => {
+                    const circle = L.circleMarker([station.lat, station.lon], {
+                        radius: 5, fillColor: '#ffffff', color: '#000000', weight: 2, opacity: 1, fillOpacity: 1
+                    });
+
+                    // On indexe la station pour la recherche
+                    stationMarkers[station.name] = circle;
+
+                    circle.on('click', async () => {
+                        circle.bindPopup(`<div style="text-align:center;"><b>${station.name}</b><br>⏳ Calcul...</div>`).openPopup();
+                        try {
+                            let arrivals = [];
+                            for (let id of station.ids) {
+                                const res = await fetch(`/api/times/${id}`);
+                                const times = await res.json();
+                                arrivals = arrivals.concat(times);
+                            }
+                            arrivals.sort((a, b) => a.minutes - b.minutes);
+                            let html = `<div style="min-width: 200px;"><b>📍 ${station.name}</b><hr style="margin:8px 0;">`;
+                            if (arrivals.length === 0) {
+                                html += `<i>Aucun tram prévu prochainement</i>`;
+                            } else {
+                                arrivals.slice(0, 4).forEach((t) => {
+                                    let line = String(t.routeId).replace(/^0+/, ''); 
+                                    let time = t.minutes === 0 ? "<b style='color:green;'>À l'approche</b>" : `<b>${t.minutes} min</b>`;
+                                    html += `<div style="margin-bottom:6px; font-size:13px;"><span style="display:inline-block; width:18px; text-align:center; background:#ddd; border-radius:3px; margin-right:4px;"><b>${line}</b></span> vers ${t.headsign}<br><span style="margin-left: 26px;">⏱️ ${time}</span></div>`;
+                                });
+                            }
+                            html += `</div>`;
+                            circle.setPopupContent(html);
+                        } catch (e) { circle.setPopupContent(`❌ Info indisponible`); }
+                    });
+                    circle.addTo(map);
+                });
+            } catch (e) {}
+        }
+
+        function toggleFilters() {
+            showTrams = document.getElementById('check-trams').checked;
+            showBuses = document.getElementById('check-buses').checked;
+            fetchTrams(); 
+        }
+
+        async function fetchTrams() {
+            try {
+                const response = await fetch('/api/trams');
+                const all = await response.json();
+                const visible = all.filter(v => (v.route_type === 0 && showTrams) || (v.route_type === 3 && showBuses));
+                const ids = visible.map(t => t.id);
+                Object.keys(markers).forEach(id => { if (!ids.includes(id)) { map.removeLayer(markers[id]); delete markers[id]; } });
+
+                visible.forEach(vehicle => {
+                    const { id, latitude, longitude, route_short_name, trip_headsign, route_color } = vehicle;
+                    const newLatLng = [latitude, longitude];
+                    const icon = L.divIcon({
+                        className: 'custom-div-icon',
+                        html: `<div class="tram-icon" style="background-color: ${route_color}; width: 30px; height: 30px;">${route_short_name}</div>`,
+                        iconSize: [30, 30], iconAnchor: [15, 15]
+                    });
+
+                    if (markers[id]) {
+                        const oldLatLng = markers[id].getLatLng();
+                        if (oldLatLng.distanceTo(L.latLng(newLatLng)) < 3) return;
+                        let path = [oldLatLng, newLatLng];
+                        try {
+                            const lines = tramLinesGeometry[route_short_name];
+                            if (lines && lines.length > 0) {
+                                let best = lines[0]; let dMin = Infinity;
+                                lines.forEach(l => { const s = turf.nearestPointOnLine(l, turf.point([oldLatLng.lng, oldLatLng.lat])); if(s.properties.dist < dMin) { dMin = s.properties.dist; best = l; } });
+                                const sS = turf.nearestPointOnLine(best, turf.point([oldLatLng.lng, oldLatLng.lat]));
+                                const sE = turf.nearestPointOnLine(best, turf.point([longitude, latitude]));
+                                const sliced = turf.lineSlice(sS, sE, best);
+                                let coords = sliced.geometry.coordinates.map(c => [c[1], c[0]]);
+                                if (oldLatLng.distanceTo(L.latLng(coords[coords.length-1])) < oldLatLng.distanceTo(L.latLng(coords[0]))) coords.reverse();
+                                path = coords;
+                            }
+                        } catch(e) {}
+                        map.removeLayer(markers[id]);
+                        markers[id] = L.Marker.movingMarker(path, [28000], { autostart: true, icon: icon }).addTo(map).bindPopup(`<b>Ligne ${route_short_name}</b><br>Destination: ${trip_headsign}`);
+                    } else {
+                        markers[id] = L.Marker.movingMarker([[latitude, longitude]], [], { icon: icon }).addTo(map).bindPopup(`<b>Ligne ${route_short_name}</b><br>Destination: ${trip_headsign}`);
+                    }
+                });
+            } catch (e) {}
+        }
+
+        fetchShapes().then(() => {
+            fetchStops();
+            fetchTrams();  
+            setInterval(fetchTrams, 30000);
+        });
+    </script>
+</body>
+</html>
