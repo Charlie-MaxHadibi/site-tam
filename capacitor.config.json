@@ -1,5 +1,8 @@
 {
   "appId": "com.tmaxmls.infotram",
   "appName": "Info Tram",
-  "webDir": "public"
+  "webDir": "public",
+  "server": {
+    "cleartext": true
+  }
 }
