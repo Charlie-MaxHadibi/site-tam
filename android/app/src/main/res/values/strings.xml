@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Info Tram</string>
+    <string name="title_activity_main">Info Tram</string>
+    <string name="package_name">com.tmaxmls.infotram</string>
+    <string name="custom_url_scheme">com.tmaxmls.infotram</string>
+</resources>

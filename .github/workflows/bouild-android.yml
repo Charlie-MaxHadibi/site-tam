@@ -1,0 +1,45 @@
+name: Build Android APK
+
+# Le robot s'active à chaque fois
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest 
+    steps:
+      - name:  Récupérer le code
+        uses: actions/checkout@v4
+
+      - name:  Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name:  Installer Java (JDK 17 pour Android)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name:  Installer les dépendances NPM
+        run: npm install
+
+      - name:  Synchroniser le web vers Android
+        run: npx cap sync android
+
+      - name:  Compiler l'APK avec Gradle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name:  Sauvegarder l'APK pour le téléchargement
+        uses: actions/upload-artifact@v4
+        with:
+          name: tam-tracker-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
