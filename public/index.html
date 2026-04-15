@@ -90,6 +90,19 @@
                 color: #f0f0f0;
             }
         }
+        #bug-btn {
+            background-color: #ff4d4d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: auto; /* Pousse le bouton sur la droite */
+        }
+        #bug-btn:hover {
+            background-color: #cc0000;
+        }
     </style>
 </head>
 <body>
@@ -101,6 +114,7 @@
     <div id="controls">
         <label><input type="checkbox" id="check-trams" checked onchange="toggleFilters()"> Trams</label>
         <label><input type="checkbox" id="check-buses" onchange="toggleFilters()"> Bus (BETA)</label>
+        <button id="bug-btn" onclick="reportBug()"> Bug :( </button>
     </div>
 
     <div id="map"></div>
@@ -120,6 +134,7 @@
             zoomControl: false,      
             renderer: myRenderer     // On remplace 'preferCanvas' par notre moteur de dessin sans limites
         }).setView([43.6107, 3.8767], 13);
+        map.attributionControl.setPrefix(false);
 
         // --- GESTION DU MODE SOMBRE/CLAIR ---
         
@@ -329,6 +344,39 @@
         fetchShapes().then(() => {
             fetchStops();
         });
+        function reportBug() {
+            // 1. On récupère la carte d'identité du téléphone/navigateur
+            const ua = navigator.userAgent;
+            let os = "Web/Inconnu";
+            
+            // 2. On essaie de deviner le système de base
+            let os = "Web/Inconnu";
+            
+            // On vérifie le système
+            if (/android/i.test(ua)) {
+                os = "Android";
+            } else if (/iPad|iPhone|iPod/.test(ua)) {
+                os = "iOS";
+            } else if (/windows/i.test(ua)) {
+                os = "Windows (PC)";
+            } else if (/macintosh|mac os x/i.test(ua)) {
+                os = "Mac (Apple)";
+            }
+
+            // 3. On prépare le texte du mail
+            // Le \n permet de faire des retours à la ligne
+            const emailBody = `Bonjour,\n\nJe souhaite signaler le bug suivant :\n\n[DÉCRIS LE PROBLÈME ICI]\n\n\n` +
+                              `--- INFOS TECHNIQUES (Ne pas modifier) ---\n` +
+                              `Système détecté : ${os}\n` +
+                              `Détails de l'appareil : ${ua}`;
+
+            // 4. On ouvre l'application mail de l'utilisateur (Remplace par ton adresse mail)
+            const tonEmail = "bloowest@gmail.com";
+            const sujet = "Rapport de Bug - InfoTram";
+            
+            // encodeURIComponent permet de transformer les espaces et sauts de ligne dans un format lisible par les liens web
+            window.location.href = `mailto:${tonEmail}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(emailBody)}`;
+        }
     </script>
 </body>
 </html>
