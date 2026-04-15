@@ -20,11 +20,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name:  Installer Java (JDK 17 pour Android)
+      - name:  Installer Java (JDK 21 pour Android)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name:  Installer les dépendances NPM
         run: npm install
