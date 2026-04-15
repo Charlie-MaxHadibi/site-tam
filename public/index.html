@@ -108,10 +108,9 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/ewoken/Leaflet.MovingMarker@master/MovingMarker.js"></script>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://infotram.tmaxmls.ovh/socket.io/socket.io.js"></script>
 
     <script>
-        alert("ÉTAPE 1 : Le code démarre bien !");
         // --- MOTEUR DE DESSIN BOOStÉ ---
         // padding: 1 force le navigateur à dessiner 100% de la carte en plus tout autour de l'écran.
         // Fini les lignes coupées quand on glisse rapidement au doigt !
@@ -166,7 +165,6 @@
         let lastVehiclesData = []; 
 
         // --- WEBSOCKETS ---
-        alert("ÉTAPE 2 : Je tente de me connecter à " + SERVER_URL);
         const socket = io(SERVER_URL); // Connexion magique au serveur
 
         // Quand le serveur crie "trams-update", on met à jour la carte !
@@ -176,7 +174,6 @@
         });
 
         async function fetchShapes() {
-            alert("ÉTAPE 3 : Je lance la requête fetch !");
             try {
                 const response = await fetch(SERVER_URL + '/api/shapes');
                 const geojson = await response.json();
@@ -194,11 +191,7 @@
                         return { color: couleur, weight: 5, opacity: 0.6 };
                     }
                 }).addTo(map);
-            } catch (e) {
-    alert("ERREUR DETECTÉE : " + e.message);
-    // Optionnel : affiche aussi l'URL tentée
-    alert("URL tentée : " + SERVER_URL);
-}
+            } catch (e) {}
         }
 
         function filterSearch() {
@@ -265,11 +258,7 @@
                     });
                     circle.addTo(map);
                 });
-            } catch (e) {
-    alert("ERREUR DETECTÉE : " + e.message);
-    // Optionnel : affiche aussi l'URL tentée
-    alert("URL tentée : " + SERVER_URL);
-}
+            } catch (e) {}
         }
 
         function toggleFilters() {
@@ -315,11 +304,7 @@
                                 if (oldLatLngObj.distanceTo(L.latLng(coords[coords.length-1])) < oldLatLngObj.distanceTo(L.latLng(coords[0]))) coords.reverse();
                                 path = coords;
                             }
-                        } catch (e) {
-    alert("ERREUR DETECTÉE : " + e.message);
-    // Optionnel : affiche aussi l'URL tentée
-    alert("URL tentée : " + SERVER_URL);
-}
+                        } catch (e) {}
                     } else {
                         // S'il n'a pas bougé de plus de 3 mètres, on bloque le chemin sur place
                         path = [newLatLng, newLatLng];
