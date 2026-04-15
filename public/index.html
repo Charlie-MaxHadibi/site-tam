@@ -111,6 +111,7 @@
     <script src="/socket.io/socket.io.js"></script>
 
     <script>
+        alert("ÉTAPE 1 : Le code démarre bien !");
         // --- MOTEUR DE DESSIN BOOStÉ ---
         // padding: 1 force le navigateur à dessiner 100% de la carte en plus tout autour de l'écran.
         // Fini les lignes coupées quand on glisse rapidement au doigt !
@@ -165,6 +166,7 @@
         let lastVehiclesData = []; 
 
         // --- WEBSOCKETS ---
+        alert("ÉTAPE 2 : Je tente de me connecter à " + SERVER_URL);
         const socket = io(SERVER_URL); // Connexion magique au serveur
 
         // Quand le serveur crie "trams-update", on met à jour la carte !
@@ -174,6 +176,7 @@
         });
 
         async function fetchShapes() {
+            alert("ÉTAPE 3 : Je lance la requête fetch !");
             try {
                 const response = await fetch(SERVER_URL + '/api/shapes');
                 const geojson = await response.json();
