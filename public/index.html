@@ -191,7 +191,11 @@
                         return { color: couleur, weight: 5, opacity: 0.6 };
                     }
                 }).addTo(map);
-            } catch (e) {}
+            } catch (e) {
+    alert("ERREUR DETECTÉE : " + e.message);
+    // Optionnel : affiche aussi l'URL tentée
+    alert("URL tentée : " + SERVER_URL);
+}
         }
 
         function filterSearch() {
@@ -258,7 +262,11 @@
                     });
                     circle.addTo(map);
                 });
-            } catch (e) {}
+            } catch (e) {
+    alert("ERREUR DETECTÉE : " + e.message);
+    // Optionnel : affiche aussi l'URL tentée
+    alert("URL tentée : " + SERVER_URL);
+}
         }
 
         function toggleFilters() {
@@ -304,7 +312,11 @@
                                 if (oldLatLngObj.distanceTo(L.latLng(coords[coords.length-1])) < oldLatLngObj.distanceTo(L.latLng(coords[0]))) coords.reverse();
                                 path = coords;
                             }
-                        } catch(e) {}
+                        } catch (e) {
+    alert("ERREUR DETECTÉE : " + e.message);
+    // Optionnel : affiche aussi l'URL tentée
+    alert("URL tentée : " + SERVER_URL);
+}
                     } else {
                         // S'il n'a pas bougé de plus de 3 mètres, on bloque le chemin sur place
                         path = [newLatLng, newLatLng];
