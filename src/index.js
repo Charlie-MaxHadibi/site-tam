@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as gtfs from 'gtfs';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
+import cors from 'cors';
 
 // NOUVEAU : Imports pour les WebSockets
 import http from 'http'; 
@@ -16,11 +17,19 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// autorise les app a lire l'API
+app.use(cors());
 
-// NOUVEAU : On crée un serveur HTTP qui "enveloppe" Express
+// On crée un serveur HTTP qui "enveloppe" Express
 const server = http.createServer(app); 
-// NOUVEAU : On attache Socket.io à ce serveur
-const io = new Server(server); 
+
+// NOUVEAU : On attache Socket.io avec les autorisations CORS ouvertes
+const io = new Server(server, {
+  cors: {
+    origin: "*", // Autorise les connexions depuis n'importe où
+    methods: ["GET", "POST"]
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 

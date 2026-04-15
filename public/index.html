@@ -115,7 +115,7 @@
         // padding: 1 force le navigateur à dessiner 100% de la carte en plus tout autour de l'écran.
         // Fini les lignes coupées quand on glisse rapidement au doigt !
         const myRenderer = L.canvas({ padding: 1 });
-
+        const SERVER_URL = 'https://infotram.tmaxmls.ovh';
         const map = L.map('map', {
             zoomControl: false,      
             renderer: myRenderer     // On remplace 'preferCanvas' par notre moteur de dessin sans limites
@@ -165,7 +165,7 @@
         let lastVehiclesData = []; 
 
         // --- WEBSOCKETS ---
-        const socket = io(); // Connexion magique au serveur
+        const socket = io(SERVER_URL); // Connexion magique au serveur
 
         // Quand le serveur crie "trams-update", on met à jour la carte !
         socket.on('trams-update', (data) => {
@@ -175,7 +175,7 @@
 
         async function fetchShapes() {
             try {
-                const response = await fetch('/api/shapes');
+                const response = await fetch(SERVER_URL + '/api/shapes');
                 const geojson = await response.json();
                 L.geoJSON(geojson, {
                     style: function(feature) {
@@ -224,7 +224,7 @@
 
         async function fetchStops() {
             try {
-                const response = await fetch('/api/stops');
+                const response = await fetch(SERVER_URL + '/api/stops');
                 const stations = await response.json();
                 stations.forEach(station => {
                     const circle = L.circleMarker([station.lat, station.lon], {
@@ -237,7 +237,7 @@
                         try {
                             let arrivals = [];
                             for (let id of station.ids) {
-                                const res = await fetch(`/api/times/${id}`);
+                                const res = await fetch(`${SERVER_URL}/api/times/${id}`);
                                 const times = await res.json();
                                 arrivals = arrivals.concat(times);
                             }
