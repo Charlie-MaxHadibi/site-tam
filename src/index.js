@@ -5,79 +5,70 @@ import { fileURLToPath } from 'url';
 import * as gtfs from 'gtfs';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 
-// En ESM, il est obligatoire de préciser l'extension .js pour les fichiers locaux !
+// NOUVEAU : Imports pour les WebSockets
+import http from 'http'; 
+import { Server } from 'socket.io'; 
+
 import importGtfs from './gtfsImport.js';
 import { startWorker, getCache } from './realtimeWorker.js';
 
-// Recréation de __dirname pour les ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+// NOUVEAU : On crée un serveur HTTP qui "enveloppe" Express
+const server = http.createServer(app); 
+// NOUVEAU : On attache Socket.io à ce serveur
+const io = new Server(server); 
+
 const PORT = process.env.PORT || 3000;
 
-// Serve static files from /public
 app.use(express.static(path.join(__dirname, '../public')));
 
-// API Route for trams
+// On garde l'ancienne API pour la compatibilité
 app.get('/api/trams', (req, res) => {
   res.json(getCache());
 });
 
-// Nouvelle API Route pour relayer les tracés (Proxy)
 app.get('/api/shapes', async (req, res) => {
   try {
-    // C'est le serveur qui télécharge, donc aucun blocage CORS !
     const response = await fetch('https://data.montpellier3m.fr/sites/default/files/ressources/MMM_MMM_LigneTram.json');
     if (!response.ok) throw new Error('Erreur réseau');
     const geojson = await response.json();
-    
-    // Le serveur renvoie le fichier propre à ta carte
     res.json(geojson);
   } catch (error) {
-    console.error("Erreur lors de la récupération des tracés :", error);
+    console.error("Erreur tracés:", error);
     res.status(500).json({ error: "Impossible de charger les tracés" });
   }
 });
-// --- 1. ROUTE DES ARRÊTS (Fusionnés par nom de station) ---
+
 app.get('/api/stops', async (req, res) => {
   try {
     const routes = await gtfs.getRoutes({ route_type: 0 });
-    let groupedStops = {}; // Notre "boîte" pour regrouper les quais
-    
+    let groupedStops = {}; 
     for (const route of routes) {
       const stops = await gtfs.getStops({ route_id: route.route_id });
       for (const stop of stops) {
-        // Si la station n'existe pas encore dans la boîte, on la crée
         if (!groupedStops[stop.stop_name]) {
-          groupedStops[stop.stop_name] = {
-            name: stop.stop_name,
-            lat: stop.stop_lat,
-            lon: stop.stop_lon,
-            ids: [] // Un tableau qui contiendra le Quai A et le Quai B
-          };
+          groupedStops[stop.stop_name] = { name: stop.stop_name, lat: stop.stop_lat, lon: stop.stop_lon, ids: [] };
         }
-        // On ajoute l'ID du quai dans la station
         if (!groupedStops[stop.stop_name].ids.includes(stop.stop_id)) {
           groupedStops[stop.stop_name].ids.push(stop.stop_id);
         }
       }
     }
-    // On renvoie la liste propre
     res.json(Object.values(groupedStops));
   } catch (error) {
-    console.error("Erreur stops:", error);
     res.status(500).json({ error: "Impossible de charger les arrêts" });
   }
 });
 
-// --- 2. ROUTE DES HORAIRES (Avec recherche de destination) ---
 app.get('/api/times/:stopId', async (req, res) => {
   try {
     const stopId = req.params.stopId;
-    
     const response = await fetch('https://data.montpellier3m.fr/GTFS/Urbain/TripUpdate.pb');
-    if (!response.ok) throw new Error("Erreur réseau TAM");
+    if (!response.ok) throw new Error("Erreur réseau");
     
     const buffer = await response.arrayBuffer();
     const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
@@ -91,45 +82,49 @@ app.get('/api/times/:stopId', async (req, res) => {
           if (update.stopId === stopId && update.arrival && update.arrival.time) {
             const timeValue = typeof update.arrival.time === 'object' ? update.arrival.time.low : update.arrival.time;
             const minutesToWait = Math.floor((timeValue - nowInSeconds) / 60);
-            
             if (minutesToWait >= 0 && minutesToWait <= 90) {
-              arrivals.push({
-                routeId: entity.tripUpdate.trip.routeId,
-                tripId: entity.tripUpdate.trip.tripId, // On garde l'ID du trajet pour trouver la destination
-                minutes: minutesToWait
-              });
+              arrivals.push({ routeId: entity.tripUpdate.trip.routeId, tripId: entity.tripUpdate.trip.tripId, minutes: minutesToWait });
             }
           }
         });
       }
     });
 
-    // On trie du plus proche au plus lointain
     arrivals.sort((a, b) => a.minutes - b.minutes);
-    let topArrivals = arrivals.slice(0, 3); // On garde les 3 prochains
+    let topArrivals = arrivals.slice(0, 3); 
     
-    // LA MAGIE : On cherche le nom du Terminus dans la base de données
     for (let i = 0; i < topArrivals.length; i++) {
         const trips = await gtfs.getTrips({ trip_id: topArrivals[i].tripId });
         topArrivals[i].headsign = trips.length > 0 ? trips[0].trip_headsign : "Terminus";
     }
-
     res.json(topArrivals);
   } catch (error) {
-    console.error("Erreur times:", error);
-    res.status(500).json({ error: "Impossible de lire les horaires" });
+    res.status(500).json({ error: "Erreur" });
   }
 });
-async function startServer() {
-  // 1. Import Static GTFS at startup
-  await importGtfs();
 
-  // 2. Start Real-time Worker
+// NOUVEAU : Gérer les connexions des utilisateurs
+io.on('connection', (socket) => {
+  console.log('🔌 Un client est connecté !');
+  // Dès qu'il se connecte, on lui envoie la dernière position connue pour qu'il n'attende pas
+  socket.emit('trams-update', getCache());
+});
+
+async function startServer() {
+  await importGtfs();
   startWorker();
 
-  // 3. Start Express Server
-  app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+  // NOUVEAU : Au lieu que le client demande, c'est le SERVEUR qui pousse les données !
+  setInterval(() => {
+    const data = getCache();
+    if (data && data.length > 0) {
+      io.emit('trams-update', data); // Envoie à tous les clients connectés
+    }
+  }, 30000);
+
+  // IMPORTANT : On utilise server.listen au lieu de app.listen
+  server.listen(PORT, () => {
+    console.log(`🚀 Server is running on http://localhost:${PORT}`);
   });
 }
 

@@ -16,32 +16,80 @@
         }
 
         /* --- STYLES DES PANNEAUX --- */
+        /* --- STYLES DES PANNEAUX --- */
         #controls, #search-box {
             position: absolute; z-index: 1000; background: white;
             padding: 12px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
 
-        #controls { top: 15px; right: 15px; display: flex; flex-direction: column; gap: 10px; }
-        
-        #search-box { top: 15px; left: 55px; /* Décalé pour laisser la place aux boutons de zoom +/- */ }
+        /* Barre de recherche centrée en haut */
+        #search-box { 
+            top: 15px; 
+            left: 15px; 
+            right: 15px; 
+            max-width: 400px; 
+            margin: 0 auto; /* Permet de centrer sur grand écran */
+        }
         
         #search-input {
-            width: 200px; padding: 8px; border: 1px solid #ccc; border-radius: 4px;
+            width: 100%; 
+            box-sizing: border-box; /* Empêche le champ de déborder */
+            padding: 12px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px;
+            font-size: 16px; /* Empêche l'iPhone de zoomer automatiquement sur le champ */
+        }
+
+        /* Filtres centrés tout en bas */
+        #controls { 
+            top: auto;
+            bottom: 30px; 
+            left: 50%;
+            transform: translateX(-50%); /* Astuce pour centrer parfaitement */
+            display: flex; 
+            flex-direction: row; /* Côte à côte */
+            gap: 20px; 
+            white-space: nowrap;
         }
 
         #search-results {
             max-height: 200px; overflow-y: auto; background: white;
             border-radius: 0 0 4px 4px; list-style: none; padding: 0; margin: 0;
-            display: none; /* Caché par défaut */
+            display: none; 
         }
 
         #search-results li {
-            padding: 8px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px;
+            padding: 12px; /* Plus grand pour les gros doigts sur mobile */
+            cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;
         }
 
         #search-results li:hover { background: #f0f0f0; }
 
-        #controls label { cursor: pointer; font-weight: bold; }
+        #controls label { cursor: pointer; font-weight: bold; font-size: 15px; }
+        
+        /* --- MODE SOMBRE AUTOMATIQUE POUR L'INTERFACE --- */
+        @media (prefers-color-scheme: dark) {
+            #controls, #search-box, #search-results {
+                background: #2a2a2a;
+                color: #f0f0f0;
+            }
+            #search-input {
+                background: #3a3a3a;
+                color: #f0f0f0;
+                border: 1px solid #555;
+            }
+            #search-results li {
+                border-bottom: 1px solid #444;
+            }
+            #search-results li:hover { 
+                background: #444; 
+            }
+            /* Assombrit un peu les popups Leaflet par défaut */
+            .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+                background: #2a2a2a;
+                color: #f0f0f0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -51,8 +99,8 @@
     </div>
 
     <div id="controls">
-        <label><input type="checkbox" id="check-trams" checked onchange="toggleFilters()"> 🚊 Trams</label>
-        <label><input type="checkbox" id="check-buses" onchange="toggleFilters()"> 🚌 Bus</label>
+        <label><input type="checkbox" id="check-trams" checked onchange="toggleFilters()"> Trams</label>
+        <label><input type="checkbox" id="check-buses" onchange="toggleFilters()"> Bus (BETA)</label>
     </div>
 
     <div id="map"></div>
@@ -60,19 +108,70 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/ewoken/Leaflet.MovingMarker@master/MovingMarker.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
 
     <script>
-        const map = L.map('map').setView([43.6107, 3.8767], 13);
+        // --- MOTEUR DE DESSIN BOOStÉ ---
+        // padding: 1 force le navigateur à dessiner 100% de la carte en plus tout autour de l'écran.
+        // Fini les lignes coupées quand on glisse rapidement au doigt !
+        const myRenderer = L.canvas({ padding: 1 });
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        const map = L.map('map', {
+            zoomControl: false,      
+            renderer: myRenderer     // On remplace 'preferCanvas' par notre moteur de dessin sans limites
+        }).setView([43.6107, 3.8767], 13);
+
+        // --- GESTION DU MODE SOMBRE/CLAIR ---
+        
+        // 1. On prépare nos deux fonds de carte CartoDB
+        const lightTheme = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '© OpenStreetMap contributors, © CARTO'
-        }).addTo(map);
+        });
+        
+        const darkTheme = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap contributors, © CARTO'
+        });
+
+        // 2. On interroge le navigateur pour connaître le thème du téléphone
+        const prefersDarkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+
+        // 3. Fonction qui applique le bon fond de carte
+        function applyTheme(isDark) {
+            if (isDark) {
+                if (map.hasLayer(lightTheme)) map.removeLayer(lightTheme);
+                darkTheme.addTo(map);
+            } else {
+                if (map.hasLayer(darkTheme)) map.removeLayer(darkTheme);
+                lightTheme.addTo(map);
+            }
+        }
+
+        // 4. On l'applique tout de suite au chargement
+        applyTheme(prefersDarkScheme.matches);
+
+        // 5. On "écoute" si l'utilisateur change le thème de son téléphone pendant qu'il utilise l'appli
+        prefersDarkScheme.addEventListener("change", (e) => {
+            applyTheme(e.matches);
+        });
+
 
         let markers = {};
-        let stationMarkers = {}; // Pour stocker les marqueurs des stations par leur nom
+        let stationMarkers = {}; 
         let showTrams = true;
         let showBuses = false;
         let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [] };
+        
+        // NOUVEAU : On mémorise la dernière liste envoyée par le serveur
+        let lastVehiclesData = []; 
+
+        // --- WEBSOCKETS ---
+        const socket = io(); // Connexion magique au serveur
+
+        // Quand le serveur crie "trams-update", on met à jour la carte !
+        socket.on('trams-update', (data) => {
+            lastVehiclesData = data; // On sauvegarde en mémoire
+            renderTrams(); // On dessine
+        });
 
         async function fetchShapes() {
             try {
@@ -87,6 +186,7 @@
                         if (vals.includes('2') || vals.includes('ligne 2')) { couleur = '#EE7F00'; num = '2'; }
                         if (vals.includes('3') || vals.includes('ligne 3')) { couleur = '#A8A900'; num = '3'; }
                         if (vals.includes('4') || vals.includes('ligne 4')) { couleur = '#8F6E3B'; num = '4'; }
+                        //if (vals.includes('5') || vals.includes('ligne 5')) { couleur = '#ffffff'; num = '5'; }
                         if (num && feature.geometry.type === 'LineString') tramLinesGeometry[num].push(feature);
                         return { color: couleur, weight: 5, opacity: 0.6 };
                     }
@@ -94,7 +194,6 @@
             } catch (e) {}
         }
 
-        // --- RECHERCHE ---
         function filterSearch() {
             const query = document.getElementById('search-input').value.toLowerCase();
             const list = document.getElementById('search-results');
@@ -111,8 +210,8 @@
                     li.textContent = name;
                     li.onclick = () => {
                         const marker = stationMarkers[name];
-                        map.flyTo(marker.getLatLng(), 16); // Zoom fluide !
-                        marker.fire('click'); // Simule un clic pour ouvrir les horaires
+                        map.flyTo(marker.getLatLng(), 16); 
+                        marker.fire('click'); 
                         list.style.display = 'none';
                         document.getElementById('search-input').value = name;
                     };
@@ -131,8 +230,6 @@
                     const circle = L.circleMarker([station.lat, station.lon], {
                         radius: 5, fillColor: '#ffffff', color: '#000000', weight: 2, opacity: 1, fillOpacity: 1
                     });
-
-                    // On indexe la station pour la recherche
                     stationMarkers[station.name] = circle;
 
                     circle.on('click', async () => {
@@ -167,56 +264,70 @@
         function toggleFilters() {
             showTrams = document.getElementById('check-trams').checked;
             showBuses = document.getElementById('check-buses').checked;
-            fetchTrams(); 
+            renderTrams(); // NOUVEAU : On relance l'affichage instantanément avec les données en mémoire
         }
 
-        async function fetchTrams() {
+        // NOUVEAU : On ne fetch plus, on utilise la donnée envoyée par le serveur (lastVehiclesData)
+        function renderTrams() {
             try {
-                const response = await fetch('/api/trams');
-                const all = await response.json();
-                const visible = all.filter(v => (v.route_type === 0 && showTrams) || (v.route_type === 3 && showBuses));
+                const visible = lastVehiclesData.filter(v => (v.route_type === 0 && showTrams) || (v.route_type === 3 && showBuses));
                 const ids = visible.map(t => t.id);
                 Object.keys(markers).forEach(id => { if (!ids.includes(id)) { map.removeLayer(markers[id]); delete markers[id]; } });
 
                 visible.forEach(vehicle => {
-                    const { id, latitude, longitude, route_short_name, trip_headsign, route_color } = vehicle;
+                    const { id, latitude, longitude, old_latitude, old_longitude, route_short_name, trip_headsign, route_color } = vehicle;
+                    
+                    // On prépare le départ et l'arrivée
                     const newLatLng = [latitude, longitude];
+                    const oldLatLngObj = L.latLng(old_latitude, old_longitude);
+                    const newLatLngObj = L.latLng(latitude, longitude);
+
                     const icon = L.divIcon({
                         className: 'custom-div-icon',
                         html: `<div class="tram-icon" style="background-color: ${route_color}; width: 30px; height: 30px;">${route_short_name}</div>`,
                         iconSize: [30, 30], iconAnchor: [15, 15]
                     });
 
-                    if (markers[id]) {
-                        const oldLatLng = markers[id].getLatLng();
-                        if (oldLatLng.distanceTo(L.latLng(newLatLng)) < 3) return;
-                        let path = [oldLatLng, newLatLng];
+                    // 1. On calcule le chemin (même si le marqueur n'existe pas encore !)
+                    let path = [[oldLatLngObj.lat, oldLatLngObj.lng], newLatLng];
+                    
+                    if (oldLatLngObj.distanceTo(newLatLngObj) > 3) {
                         try {
                             const lines = tramLinesGeometry[route_short_name];
                             if (lines && lines.length > 0) {
                                 let best = lines[0]; let dMin = Infinity;
-                                lines.forEach(l => { const s = turf.nearestPointOnLine(l, turf.point([oldLatLng.lng, oldLatLng.lat])); if(s.properties.dist < dMin) { dMin = s.properties.dist; best = l; } });
-                                const sS = turf.nearestPointOnLine(best, turf.point([oldLatLng.lng, oldLatLng.lat]));
+                                lines.forEach(l => { const s = turf.nearestPointOnLine(l, turf.point([oldLatLngObj.lng, oldLatLngObj.lat])); if(s.properties.dist < dMin) { dMin = s.properties.dist; best = l; } });
+                                const sS = turf.nearestPointOnLine(best, turf.point([oldLatLngObj.lng, oldLatLngObj.lat]));
                                 const sE = turf.nearestPointOnLine(best, turf.point([longitude, latitude]));
                                 const sliced = turf.lineSlice(sS, sE, best);
                                 let coords = sliced.geometry.coordinates.map(c => [c[1], c[0]]);
-                                if (oldLatLng.distanceTo(L.latLng(coords[coords.length-1])) < oldLatLng.distanceTo(L.latLng(coords[0]))) coords.reverse();
+                                if (oldLatLngObj.distanceTo(L.latLng(coords[coords.length-1])) < oldLatLngObj.distanceTo(L.latLng(coords[0]))) coords.reverse();
                                 path = coords;
                             }
                         } catch(e) {}
-                        map.removeLayer(markers[id]);
-                        markers[id] = L.Marker.movingMarker(path, [28000], { autostart: true, icon: icon }).addTo(map).bindPopup(`<b>Ligne ${route_short_name}</b><br>Destination: ${trip_headsign}`);
                     } else {
-                        markers[id] = L.Marker.movingMarker([[latitude, longitude]], [], { icon: icon }).addTo(map).bindPopup(`<b>Ligne ${route_short_name}</b><br>Destination: ${trip_headsign}`);
+                        // S'il n'a pas bougé de plus de 3 mètres, on bloque le chemin sur place
+                        path = [newLatLng, newLatLng];
                     }
-                });
+
+                    // 2. On applique l'affichage
+                    if (markers[id]) {
+                        // S'il existait déjà, on le détruit pour le remplacer
+                        map.removeLayer(markers[id]);
+                    } 
+                    
+                    // Qu'il soit nouveau ou ancien, on lui donne l'ordre d'avancer sur le chemin calculé !
+                    markers[id] = L.Marker.movingMarker(path, [28000], { autostart: true, icon: icon })
+                        .addTo(map)
+                        .bindPopup(`<b>Ligne ${route_short_name}</b><br>Destination: ${trip_headsign}`);
+                    
+                });    
             } catch (e) {}
         }
 
+        // NOUVEAU : Plus de setInterval ! Le socket dicte le rythme.
         fetchShapes().then(() => {
             fetchStops();
-            fetchTrams();  
-            setInterval(fetchTrams, 30000);
         });
     </script>
 </body>

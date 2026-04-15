@@ -3,6 +3,8 @@ import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import * as gtfs from 'gtfs';
 
 let vehicleCache = [];
+// NOUVEAU : Le carnet de bord du serveur pour retenir où étaient les trams
+let vehicleHistory = {}; 
 
 async function updateRealtimeData() {
   try {
@@ -21,17 +23,16 @@ async function updateRealtimeData() {
       if (entity.vehicle) {
         const { vehicle, trip } = entity.vehicle;
         const tripId = trip ? trip.tripId : null;
-        const routeId = trip ? trip.routeId : null; // <-- LA FAMEUSE LIGNE MANQUANTE !
+        const routeId = trip ? trip.routeId : null;
 
         let extraInfo = {
-          route_short_name: routeId || '?', // On affiche le routeId par défaut au lieu de 'Unknown'
+          route_short_name: routeId || '?',
           trip_headsign: 'Inconnue',
           route_color: '#808080',
           route_type: null
         };
 
         if (tripId || routeId) {
-            // On sécurise pour éviter un autre crash si tripId est vide
             let id = tripId ? tripId.toLowerCase() : ''; 
             
             if (id.includes('ligne 1') || routeId == '1' || routeId == '01') extraInfo.route_color = '#0055A4';
@@ -40,10 +41,8 @@ async function updateRealtimeData() {
             if (id.includes('ligne 4') || routeId == '4' || routeId == '04') extraInfo.route_color = '#8F6E3B';
             if (id.includes('ligne 5') || routeId == '5' || routeId == '05') extraInfo.route_color = 'rgb(155, 202, 255)';
         }    
-            // ... (la suite avec const trips = await gtfs.getTrips... reste identique)
 
         if (tripId) {
-          // Query SQLite for static data
           const trips = await gtfs.getTrips({ trip_id: tripId });
 
           if (trips.length > 0) {
@@ -57,10 +56,29 @@ async function updateRealtimeData() {
           }
         }
 
+        // --- LA MAGIE OPÈRE ICI ---
+        const vId = entity.id;
+        const currentLat = entity.vehicle.position.latitude;
+        const currentLon = entity.vehicle.position.longitude;
+
+        let oldLat = currentLat;
+        let oldLon = currentLon;
+
+        // Si le serveur connaît déjà ce tram, on récupère son ancienne position
+        if (vehicleHistory[vId]) {
+            oldLat = vehicleHistory[vId].lat;
+            oldLon = vehicleHistory[vId].lon;
+        }
+
+        // On sauvegarde la position actuelle pour le cycle suivant
+        vehicleHistory[vId] = { lat: currentLat, lon: currentLon };
+
         updatedVehicles.push({
-          id: entity.id,
-          latitude: entity.vehicle.position.latitude,
-          longitude: entity.vehicle.position.longitude,
+          id: vId,
+          latitude: currentLat,
+          longitude: currentLon,
+          old_latitude: oldLat,   // On ajoute l'ancienne latitude au paquet cadeau
+          old_longitude: oldLon,  // On ajoute l'ancienne longitude au paquet cadeau
           bearing: entity.vehicle.position.bearing,
           ...extraInfo
         });
