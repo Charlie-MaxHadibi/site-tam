@@ -33,14 +33,15 @@ async function updateRealtimeData() {
         };
 
         if (tripId || routeId) {
-            let id = tripId ? tripId.toLowerCase() : ''; 
-            
-            if (id.includes('ligne 1') || routeId == '1' || routeId == '01') extraInfo.route_color = '#0055A4';
-            if (id.includes('ligne 2') || routeId == '2' || routeId == '02') extraInfo.route_color = '#EE7F00';
-            if (id.includes('ligne 3') || routeId == '3' || routeId == '03') extraInfo.route_color = '#A8A900';
-            if (id.includes('ligne 4') || routeId == '4' || routeId == '04') extraInfo.route_color = '#8F6E3B';
-            if (id.includes('ligne 5') || routeId == '5' || routeId == '05') extraInfo.route_color = 'rgb(155, 202, 255)';
-        }    
+          let id = tripId ? tripId.toLowerCase() : ''; 
+          
+          if (id.includes('ligne 1') || routeId == '1' || routeId == '01') { extraInfo.route_color = '#0055A4'; extraInfo.route_type = 0; }
+          if (id.includes('ligne 2') || routeId == '2' || routeId == '02') { extraInfo.route_color = '#EE7F00'; extraInfo.route_type = 0; }
+          if (id.includes('ligne 3') || routeId == '3' || routeId == '03') { extraInfo.route_color = '#A8A900'; extraInfo.route_type = 0; }
+          if (id.includes('ligne 4') || routeId == '4' || routeId == '04') { extraInfo.route_color = '#8F6E3B'; extraInfo.route_type = 0; }
+          // En prévision de la future ligne 5 !
+          if (id.includes('ligne 5') || routeId == '5' || routeId == '05') { extraInfo.route_color = 'rgb(155, 202, 255)'; extraInfo.route_type = 0; }
+        }
 
         if (tripId) {
           const trips = await gtfs.getTrips({ trip_id: tripId });

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TAM Montpellier Tram Tracker</title>
+    <title>Montpellier Mobilité Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
@@ -15,105 +15,78 @@
             font-weight: bold; font-size: 12px; text-shadow: 1px 1px 2px black;
         }
 
-        /* --- STYLES DES PANNEAUX --- */
-        /* --- STYLES DES PANNEAUX --- */
+        #top-menu {
+            position: absolute;
+            top: 15px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; display: flex; gap: 10px;
+            background: white; padding: 6px; border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;
+        }
+        .menu-btn {
+            padding: 8px 16px; border: none; border-radius: 4px;
+            background: transparent; font-size: 15px; font-weight: bold;
+            cursor: pointer; transition: background 0.2s; color: #333;
+        }
+        
+        /* Couleurs dynamiques selon le mode actif */
+        .menu-btn.active.tram-btn { background: #0055A4; color: white; }
+        .menu-btn.active.velo-btn { background: #4CAF50; color: white; } 
+        .menu-btn.active.parking-btn { background: #007BFF; color: white; }
+
         #controls, #search-box {
             position: absolute; z-index: 1000; background: white;
             padding: 12px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
 
-        /* Barre de recherche centrée en haut */
-        #search-box { 
-            top: 15px; 
-            left: 15px; 
-            right: 15px; 
-            max-width: 400px; 
-            margin: 0 auto; /* Permet de centrer sur grand écran */
-        }
-        
-        #search-input {
-            width: 100%; 
-            box-sizing: border-box; /* Empêche le champ de déborder */
-            padding: 12px; 
-            border: 1px solid #ccc; 
-            border-radius: 4px;
-            font-size: 16px; /* Empêche l'iPhone de zoomer automatiquement sur le champ */
-        }
+        #search-box { top: 75px; left: 15px; right: 15px; max-width: 400px; margin: 0 auto; }
+        #search-input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
 
-        /* Filtres centrés tout en bas */
         #controls { 
-            top: auto;
-            bottom: 30px; 
-            left: 50%;
-            transform: translateX(-50%); /* Astuce pour centrer parfaitement */
-            display: flex; 
-            flex-direction: row; /* Côte à côte */
-            gap: 20px; 
-            white-space: nowrap;
+            top: auto; bottom: 30px; right: 15px; 
+            padding: 0; background: transparent; box-shadow: none;
         }
 
         #search-results {
             max-height: 200px; overflow-y: auto; background: white;
-            border-radius: 0 0 4px 4px; list-style: none; padding: 0; margin: 0;
-            display: none; 
+            border-radius: 0 0 4px 4px; list-style: none; padding: 0; margin: 0; display: none; 
         }
 
-        #search-results li {
-            padding: 12px; /* Plus grand pour les gros doigts sur mobile */
-            cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px;
-        }
-
+        #search-results li { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; }
         #search-results li:hover { background: #f0f0f0; }
-
-        #controls label { cursor: pointer; font-weight: bold; font-size: 15px; }
         
-        /* --- MODE SOMBRE AUTOMATIQUE POUR L'INTERFACE --- */
         @media (prefers-color-scheme: dark) {
-            #controls, #search-box, #search-results {
-                background: #2a2a2a;
-                color: #f0f0f0;
-            }
-            #search-input {
-                background: #3a3a3a;
-                color: #f0f0f0;
-                border: 1px solid #555;
-            }
-            #search-results li {
-                border-bottom: 1px solid #444;
-            }
-            #search-results li:hover { 
-                background: #444; 
-            }
-            /* Assombrit un peu les popups Leaflet par défaut */
-            .leaflet-popup-content-wrapper, .leaflet-popup-tip {
-                background: #2a2a2a;
-                color: #f0f0f0;
-            }
+            #search-box, #search-results, #top-menu { background: #2a2a2a; color: #f0f0f0; }
+            #search-input { background: #3a3a3a; color: #f0f0f0; border: 1px solid #555; }
+            #search-results li { border-bottom: 1px solid #444; }
+            #search-results li:hover { background: #444; }
+            .menu-btn { color: #f0f0f0; }
+            .menu-btn.active.tram-btn { background: #0055A4; color: white; }
+            .menu-btn.active.velo-btn { background: #4CAF50; color: white; }
+            .menu-btn.active.parking-btn { background: #007BFF; color: white; }
+            .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #2a2a2a; color: #f0f0f0; }
         }
+
         #bug-btn {
-            background-color: #ff4d4d;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            padding: 5px 10px;
-            font-weight: bold;
-            cursor: pointer;
-            margin-left: auto; /* Pousse le bouton sur la droite */
+            background-color: #ff4d4d; color: white; border: none;
+            border-radius: 8px; padding: 10px 15px; font-weight: bold;
+            cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
-        #bug-btn:hover {
-            background-color: #cc0000;
-        }
+        #bug-btn:hover { background-color: #cc0000; }
     </style>
 </head>
 <body>
+    <div id="top-menu">
+        <button class="menu-btn tram-btn active" onclick="setMode('trams', this)">🚋 Trams</button>
+        <button class="menu-btn velo-btn" onclick="setMode('velos', this)">🚲 Vélos</button>
+        <button class="menu-btn parking-btn" onclick="setMode('parkings', this)">🅿️ Parkings</button>
+    </div>
+
     <div id="search-box">
-        <input type="text" id="search-input" placeholder="Rechercher un arrêt..." oninput="filterSearch()">
+        <input type="text" id="search-input" placeholder="Rechercher un arrêt de tram..." oninput="filterSearch()">
         <ul id="search-results"></ul>
     </div>
 
     <div id="controls">
-        <label><input type="checkbox" id="check-trams" checked onchange="toggleFilters()"> Trams</label>
-        <label><input type="checkbox" id="check-buses" onchange="toggleFilters()"> Bus (BETA)</label>
         <button id="bug-btn" onclick="reportBug()"> Bug :( </button>
     </div>
 
@@ -125,32 +98,20 @@
     <script src="https://infotram.tmaxmls.ovh/socket.io/socket.io.js"></script>
 
     <script>
-        // --- MOTEUR DE DESSIN BOOStÉ ---
-        // padding: 1 force le navigateur à dessiner 100% de la carte en plus tout autour de l'écran.
-        // Fini les lignes coupées quand on glisse rapidement au doigt !
         const myRenderer = L.canvas({ padding: 1 });
         const SERVER_URL = 'https://infotram.tmaxmls.ovh';
+        const OPEN_DATA_URL = 'https://portail-api-data.montpellier3m.fr';
+
         const map = L.map('map', {
             zoomControl: false,      
-            renderer: myRenderer     // On remplace 'preferCanvas' par notre moteur de dessin sans limites
+            renderer: myRenderer
         }).setView([43.6107, 3.8767], 13);
         map.attributionControl.setPrefix(false);
 
-        // --- GESTION DU MODE SOMBRE/CLAIR ---
-        
-        // 1. On prépare nos deux fonds de carte CartoDB
-        const lightTheme = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© OpenStreetMap contributors, © CARTO'
-        });
-        
-        const darkTheme = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© OpenStreetMap contributors, © CARTO'
-        });
-
-        // 2. On interroge le navigateur pour connaître le thème du téléphone
+        const lightTheme = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap' });
+        const darkTheme = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap' });
         const prefersDarkScheme = window.matchMedia("(prefers-color-scheme: dark)");
 
-        // 3. Fonction qui applique le bon fond de carte
         function applyTheme(isDark) {
             if (isDark) {
                 if (map.hasLayer(lightTheme)) map.removeLayer(lightTheme);
@@ -160,34 +121,178 @@
                 lightTheme.addTo(map);
             }
         }
-
-        // 4. On l'applique tout de suite au chargement
         applyTheme(prefersDarkScheme.matches);
+        prefersDarkScheme.addEventListener("change", (e) => applyTheme(e.matches));
 
-        // 5. On "écoute" si l'utilisateur change le thème de son téléphone pendant qu'il utilise l'appli
-        prefersDarkScheme.addEventListener("change", (e) => {
-            applyTheme(e.matches);
-        });
+        let currentMode = 'trams';
+        
+        // --- CALQUES ---
+        const tramLinesLayer = L.layerGroup().addTo(map);
+        const tramStopsLayer = L.layerGroup().addTo(map);
+        const tramMarkersLayer = L.layerGroup().addTo(map);
+        const velosLayer = L.layerGroup(); 
+        const parkingsLayer = L.layerGroup(); // NOUVEAU calque pour les parkings
 
+        function setMode(mode, btnElement) {
+            currentMode = mode;
+            
+            document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('active'));
+            btnElement.classList.add('active');
+
+            const searchBox = document.getElementById('search-box');
+
+            // 1. On nettoie tout
+            map.removeLayer(tramLinesLayer);
+            map.removeLayer(tramStopsLayer);
+            map.removeLayer(tramMarkersLayer);
+            map.removeLayer(velosLayer);
+            map.removeLayer(parkingsLayer);
+
+            // 2. On affiche le bon contenu
+            if (mode === 'trams') {
+                searchBox.style.display = 'block';
+                map.addLayer(tramLinesLayer);
+                map.addLayer(tramStopsLayer);
+                map.addLayer(tramMarkersLayer);
+            } 
+            else if (mode === 'velos') {
+                searchBox.style.display = 'none'; 
+                map.addLayer(velosLayer);
+                if (Object.keys(velosLayer._layers).length === 0) fetchVelos();
+            }
+            else if (mode === 'parkings') {
+                searchBox.style.display = 'none';
+                map.addLayer(parkingsLayer);
+                // Chargement à la volée la première fois
+                if (Object.keys(parkingsLayer._layers).length === 0) fetchParkings();
+            }
+
+            renderTrams(); 
+        }
 
         let markers = {};
         let stationMarkers = {}; 
-        let showTrams = true;
-        let showBuses = false;
         let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [] };
-        
-        // NOUVEAU : On mémorise la dernière liste envoyée par le serveur
         let lastVehiclesData = []; 
 
-        // --- WEBSOCKETS ---
-        const socket = io(SERVER_URL); // Connexion magique au serveur
-
-        // Quand le serveur crie "trams-update", on met à jour la carte !
+        const socket = io(SERVER_URL);
         socket.on('trams-update', (data) => {
-            lastVehiclesData = data; // On sauvegarde en mémoire
-            renderTrams(); // On dessine
+            lastVehiclesData = data || []; 
+            if (currentMode === 'trams') renderTrams(); 
         });
 
+        // --- API PARKINGS (NOUVEAU) ---
+        async function fetchParkings() {
+            try {
+                const response = await fetch(`${OPEN_DATA_URL}/offstreetparking?limit=1000`);
+                const parkings = await response.json();
+                
+                parkings.forEach(parking => {
+                    // Structure Fiware expliquée dans ta doc Swagger
+                    const name = parking.name?.value || "Parking";
+                    const dispo = parking.availableSpotNumber?.value || 0;
+                    const total = parking.totalSpotNumber?.value || "?";
+                    
+                    let lat = 0, lon = 0;
+                    
+                    if (parking.location?.value?.coordinates) {
+                        const coords = parking.location.value.coordinates;
+                        if (typeof coords[0] === 'string') {
+                            const parts = coords[0].split(',');
+                            lon = parseFloat(parts[0].trim());
+                            lat = parseFloat(parts[1].trim());
+                        } else if (coords.length >= 2) {
+                            lon = coords[0];
+                            lat = coords[1];
+                        }
+                    }
+
+                    if (lat !== 0 && lon !== 0) {
+                        const marker = L.circleMarker([lat, lon], {
+                            radius: 8,
+                            fillColor: '#007BFF', // Bleu pour les parkings
+                            color: '#ffffff',
+                            weight: 2,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        });
+
+                        const popupHtml = `
+                            <div style="text-align:center; min-width: 160px; font-family: sans-serif;">
+                                <b style="font-size: 14px;">🅿️ ${name}</b><hr style="margin:8px 0; border: 0; border-top: 1px solid #ccc;">
+                                <div style="display:flex; justify-content: space-around; margin-top: 10px;">
+                                    <div style="text-align: center;">
+                                        <b style="font-size: 20px; color: #007BFF;">${dispo}</b><br>
+                                        <span style="font-size: 12px; color: #666;">Places dispo</span>
+                                    </div>
+                                    <div style="text-align: center; border-left: 1px solid #eee; padding-left: 15px;">
+                                        <b style="font-size: 20px; color: #333;">${total}</b><br>
+                                        <span style="font-size: 12px; color: #666;">Total</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        marker.bindPopup(popupHtml);
+                        marker.addTo(parkingsLayer);
+                    }
+                });
+            } catch (error) {
+                console.error("Erreur lors de la récupération des Parkings:", error);
+            }
+        }
+
+        // --- API VÉLOMAGG ---
+        async function fetchVelos() {
+            try {
+                const response = await fetch(`${OPEN_DATA_URL}/bikestation?limit=1000`);
+                const stations = await response.json();
+                
+                stations.forEach(station => {
+                    const name = station.address?.value?.streetAddress || "Station Vélomagg";
+                    const availableBikes = station.availableBikeNumber?.value || 0;
+                    const freeSlots = station.freeSlotNumber?.value || 0;
+                    
+                    let lat = 0, lon = 0;
+                    if (station.location?.value?.coordinates) {
+                        const coords = station.location.value.coordinates;
+                        if (typeof coords[0] === 'string') {
+                            const parts = coords[0].split(',');
+                            lon = parseFloat(parts[0].trim());
+                            lat = parseFloat(parts[1].trim());
+                        } else if (coords.length >= 2) {
+                            lon = coords[0];
+                            lat = coords[1];
+                        }
+                    }
+
+                    if (lat !== 0 && lon !== 0) {
+                        const marker = L.circleMarker([lat, lon], {
+                            radius: 8, fillColor: '#4CAF50', color: '#ffffff', weight: 2, opacity: 1, fillOpacity: 0.9
+                        });
+
+                        const popupHtml = `
+                            <div style="text-align:center; min-width: 160px; font-family: sans-serif;">
+                                <b style="font-size: 14px;">🚲 ${name}</b><hr style="margin:8px 0; border: 0; border-top: 1px solid #ccc;">
+                                <div style="display:flex; justify-content: space-around; margin-top: 10px;">
+                                    <div style="text-align: center;">
+                                        <b style="font-size: 20px; color: #4CAF50;">${availableBikes}</b><br>
+                                        <span style="font-size: 12px; color: #666;">Vélos dispo</span>
+                                    </div>
+                                    <div style="text-align: center; border-left: 1px solid #eee; padding-left: 15px;">
+                                        <b style="font-size: 20px; color: #FF9800;">${freeSlots}</b><br>
+                                        <span style="font-size: 12px; color: #666;">Places libres</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                        marker.bindPopup(popupHtml);
+                        marker.addTo(velosLayer);
+                    }
+                });
+            } catch (error) { console.error("Erreur Vélos:", error); }
+        }
+
+        // --- API TRAMS ---
         async function fetchShapes() {
             try {
                 const response = await fetch(SERVER_URL + '/api/shapes');
@@ -201,12 +306,11 @@
                         if (vals.includes('2') || vals.includes('ligne 2')) { couleur = '#EE7F00'; num = '2'; }
                         if (vals.includes('3') || vals.includes('ligne 3')) { couleur = '#A8A900'; num = '3'; }
                         if (vals.includes('4') || vals.includes('ligne 4')) { couleur = '#8F6E3B'; num = '4'; }
-                        //if (vals.includes('5') || vals.includes('ligne 5')) { couleur = '#ffffff'; num = '5'; }
                         if (num && feature.geometry.type === 'LineString') tramLinesGeometry[num].push(feature);
                         return { color: couleur, weight: 5, opacity: 0.6 };
                     }
-                }).addTo(map);
-            } catch (e) {}
+                }).addTo(tramLinesLayer);
+            } catch (e) { console.error("Erreur shapes:", e); }
         }
 
         function filterSearch() {
@@ -232,9 +336,7 @@
                     };
                     list.appendChild(li);
                 });
-            } else {
-                list.style.display = 'none';
-            }
+            } else { list.style.display = 'none'; }
         }
 
         async function fetchStops() {
@@ -271,30 +373,31 @@
                             circle.setPopupContent(html);
                         } catch (e) { circle.setPopupContent(`❌ Info indisponible`); }
                     });
-                    circle.addTo(map);
+                    circle.addTo(tramStopsLayer);
                 });
-            } catch (e) {}
+            } catch (e) { console.error("Erreur stops:", e); }
         }
 
-        function toggleFilters() {
-            showTrams = document.getElementById('check-trams').checked;
-            showBuses = document.getElementById('check-buses').checked;
-            renderTrams(); // NOUVEAU : On relance l'affichage instantanément avec les données en mémoire
-        }
-
-        // NOUVEAU : On ne fetch plus, on utilise la donnée envoyée par le serveur (lastVehiclesData)
         function renderTrams() {
             try {
-                const visible = lastVehiclesData.filter(v => (v.route_type === 0 && showTrams) || (v.route_type === 3 && showBuses));
+                const visible = (currentMode === 'trams') 
+                    ? lastVehiclesData.filter(v => v.route_type === 0 || ['1', '2', '3', '4', '01', '02', '03', '04'].includes(String(v.route_short_name))) 
+                    : [];
+
                 const ids = visible.map(t => t.id);
-                Object.keys(markers).forEach(id => { if (!ids.includes(id)) { map.removeLayer(markers[id]); delete markers[id]; } });
+                
+                Object.keys(markers).forEach(id => { 
+                    if (!ids.includes(id)) { 
+                        tramMarkersLayer.removeLayer(markers[id]); 
+                        delete markers[id]; 
+                    } 
+                });
 
                 visible.forEach(vehicle => {
                     const { id, latitude, longitude, old_latitude, old_longitude, route_short_name, trip_headsign, route_color } = vehicle;
                     
-                    // On prépare le départ et l'arrivée
                     const newLatLng = [latitude, longitude];
-                    const oldLatLngObj = L.latLng(old_latitude, old_longitude);
+                    const oldLatLngObj = L.latLng(old_latitude || latitude, old_longitude || longitude); 
                     const newLatLngObj = L.latLng(latitude, longitude);
 
                     const icon = L.divIcon({
@@ -303,7 +406,6 @@
                         iconSize: [30, 30], iconAnchor: [15, 15]
                     });
 
-                    // 1. On calcule le chemin (même si le marqueur n'existe pas encore !)
                     let path = [[oldLatLngObj.lat, oldLatLngObj.lng], newLatLng];
                     
                     if (oldLatLngObj.distanceTo(newLatLngObj) > 3) {
@@ -321,58 +423,37 @@
                             }
                         } catch (e) {}
                     } else {
-                        // S'il n'a pas bougé de plus de 3 mètres, on bloque le chemin sur place
                         path = [newLatLng, newLatLng];
                     }
 
-                    // 2. On applique l'affichage
                     if (markers[id]) {
-                        // S'il existait déjà, on le détruit pour le remplacer
-                        map.removeLayer(markers[id]);
+                        tramMarkersLayer.removeLayer(markers[id]);
                     } 
                     
-                    // Qu'il soit nouveau ou ancien, on lui donne l'ordre d'avancer sur le chemin calculé !
                     markers[id] = L.Marker.movingMarker(path, [28000], { autostart: true, icon: icon })
-                        .addTo(map)
                         .bindPopup(`<b>Ligne ${route_short_name}</b><br>Destination: ${trip_headsign}`);
-                    
+                        
+                    tramMarkersLayer.addLayer(markers[id]);
                 });    
-            } catch (e) {}
+            } catch (e) { console.error("Erreur d'affichage des trams:", e); }
         }
 
-        // NOUVEAU : Plus de setInterval ! Le socket dicte le rythme.
         fetchShapes().then(() => {
             fetchStops();
         });
+
         function reportBug() {
-            // 1. On récupère la carte d'identité du téléphone/navigateur
             const ua = navigator.userAgent;          
-            // 2. On essaie de deviner le système de base
             let os = "Web/Inconnu";
-            
-            // On vérifie le système
-            if (/android/i.test(ua)) {
-                os = "Android";
-            } else if (/iPad|iPhone|iPod/.test(ua)) {
-                os = "iOS";
-            } else if (/windows/i.test(ua)) {
-                os = "Windows (PC)";
-            } else if (/macintosh|mac os x/i.test(ua)) {
-                os = "Mac (Apple)";
-            }
+            if (/android/i.test(ua)) os = "Android";
+            else if (/iPad|iPhone|iPod/.test(ua)) os = "iOS";
+            else if (/windows/i.test(ua)) os = "Windows (PC)";
+            else if (/macintosh|mac os x/i.test(ua)) os = "Mac (Apple)";
 
-            // 3. On prépare le texte du mail
-            // Le \n permet de faire des retours à la ligne
-            const emailBody = `Bonjour,\n\nJe souhaite signaler le bug suivant :\n\n[DÉCRIS LE PROBLÈME ICI]\n\n\n` +
-                              `--- INFOS TECHNIQUES (Ne pas modifier) ---\n` +
-                              `Système détecté : ${os}\n` +
-                              `Détails de l'appareil : ${ua}`;
+            const emailBody = `Bonjour,\n\nJe souhaite signaler le bug suivant :\n\n[DÉCRIS LE PROBLÈME ICI]\n\n\n--- INFOS TECHNIQUES (Ne pas modifier) ---\nSystème détecté : ${os}\nDétails de l'appareil : ${ua}`;
 
-            // 4. On ouvre l'application mail de l'utilisateur (Remplace par ton adresse mail)
             const tonEmail = "bloowest@gmail.com";
             const sujet = "Rapport de Bug - InfoTram";
-            
-            // encodeURIComponent permet de transformer les espaces et sauts de ligne dans un format lisible par les liens web
             window.location.href = `mailto:${tonEmail}?subject=${encodeURIComponent(sujet)}&body=${encodeURIComponent(emailBody)}`;
         }
     </script>
