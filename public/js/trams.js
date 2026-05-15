@@ -7,6 +7,7 @@ export function setupTrams(map, markersLayer, getCurrentMode) {
     socket.on('trams-update', (data) => {
         lastVehiclesData = data || [];
         renderTrams();
+        return renderTrams;
     });
 
     function renderTrams() {

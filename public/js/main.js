@@ -37,6 +37,7 @@ let currentMode = 'trams';
 let userCoords = null;
 let stationMarkers = {}; // Pour la barre de recherche
 let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [] }; // Pour Turf.js (nouveau trams.js)
+let forceTramRender = null;
 
 // --- GESTION DU MENU BURGER ---
 window.toggleMenu = function() {
@@ -75,6 +76,8 @@ window.setMode = function(mode, btnElement) {
         map.addLayer(tramLinesLayer);
         map.addLayer(tramStopsLayer);
         map.addLayer(tramMarkersLayer);
+
+        if (forceTramRender) forceTramRender();
     } 
     else if (mode === 'velos') {
         if (searchBox) searchBox.style.display = 'none'; 
@@ -199,6 +202,7 @@ async function init() {
 
         // 2. Initialisation des Trams (Maintenant qu'on a les tracés)
         setupTrams(map, tramMarkersLayer, () => currentMode, tramLinesGeometry);
+        forceTramRender = setupTrams(map, tramMarkersLayer, () => currentMode);
 
         // 3. Récupération et affichage interactif des arrêts de tram
         const responseStops = await fetch('/api/stops');

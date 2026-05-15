@@ -1,8 +1,9 @@
-# Dépendances (le serveur les retéléchargera tout seul)
 node_modules/
-
-# Base de données (le serveur créera la sienne au démarrage)
-data/
-
-# Variables secrètes
+#data/
 .env
+.db
+.sqlite
+.sqlite3
+*-wal
+*-shm
+*-journal
