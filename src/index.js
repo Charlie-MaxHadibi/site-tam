@@ -7,8 +7,6 @@ import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import cors from 'cors';
 import http from 'http'; 
 import { Server } from 'socket.io'; 
-
-// NOUVEAU : Le serveur importe le mathématicien Turf !
 import * as turf from '@turf/turf';
 
 import importGtfs from './gtfsImport.js';
@@ -21,26 +19,15 @@ const app = express();
 app.use(cors());
 
 const server = http.createServer(app); 
-
-const io = new Server(server, {
-  cors: {
-    origin: "*", 
-    methods: ["GET", "POST"]
-  }
-});
-
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] }});
 const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, '../public')));
 
-// ==========================================
-// NOUVEAU : LA MÉMOIRE DU SERVEUR
-// ==========================================
 let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [] };
-let previousPositions = {}; // <-- LE CERVEAU SE SOUVIENT ENFIN !
-let lastEnrichedData = [];  // <-- Stocke le dernier calcul pour les nouveaux venus
+let previousPositions = {}; 
+let lastEnrichedData = [];  
 
-// Le serveur télécharge et apprend la carte des rails au démarrage
 async function loadShapesInServerMemory() {
   try {
     console.log("🗺️ Chargement des tracés de tramways en mémoire...");
@@ -66,13 +53,8 @@ async function loadShapesInServerMemory() {
   }
 }
 
-// ==========================================
-// LE MOTEUR DE CALCUL DE TRAJET CORRIGÉ
-// ==========================================
 function calculatePathWithTurf(vehicle) {
     const { id, latitude, longitude, route_short_name } = vehicle;
-
-    // 1. On interroge la mémoire du serveur pour trouver l'ancienne position
     let old_lat = latitude;
     let old_lon = longitude;
 
@@ -83,56 +65,73 @@ function calculatePathWithTurf(vehicle) {
 
     const startPt = turf.point([old_lon, old_lat]);
     const endPt = turf.point([longitude, latitude]);
+    const straightDistance = turf.distance(startPt, endPt, { units: 'meters' });
 
-    const distanceMeters = turf.distance(startPt, endPt, { units: 'meters' });
-
-    // S'il n'a pas bougé de plus de 5m, on ne calcule rien
-    if (distanceMeters > 400 || distanceMeters < 5) {
-        return [[latitude, longitude], [latitude, longitude]];
+    // 1. Filtre anti-saut : Si immobile (<10m) ou erreur GPS absurde (>800m en 30s)
+    if (straightDistance > 800 || straightDistance < 10) {
+        return [[old_lat, old_lon], [latitude, longitude]];
     }
 
     try {
         const lines = tramLinesGeometry[route_short_name];
         if (lines && lines.length > 0) {
-            let best = lines[0];
-            let dMin = Infinity;
-
+            
+            // 2. Trouver le bout de rail le plus proche de la position d'ARRIVÉE
+            let bestLine = lines[0]; 
+            let minEndDist = Infinity;
+            
             lines.forEach(l => {
-                const s = turf.nearestPointOnLine(l, startPt);
-                if(s.properties.dist < dMin) {
-                    dMin = s.properties.dist;
-                    best = l;
+                const snapped = turf.nearestPointOnLine(l, endPt);
+                if (snapped.properties.dist < minEndDist) { 
+                    minEndDist = snapped.properties.dist; 
+                    bestLine = l; 
                 }
             });
 
-            const sS = turf.nearestPointOnLine(best, startPt);
-            const sE = turf.nearestPointOnLine(best, endPt);
-            const sliced = turf.lineSlice(sS, sE, best);
+            // Si le tram a trop dérivé des rails (>50m), on abandonne le snapping
+            if (minEndDist > 0.05) {
+                return [[old_lat, old_lon], [latitude, longitude]];
+            }
+
+            // 3. Découper CE tronçon précis
+            const sS = turf.nearestPointOnLine(bestLine, startPt);
+            const sE = turf.nearestPointOnLine(bestLine, endPt);
+            const sliced = turf.lineSlice(sS, sE, bestLine);
             
             let coords = sliced.geometry.coordinates.map(c => [c[1], c[0]]);
             
+            // 4. Remettre dans le sens de la marche
             const distToStart = turf.distance(startPt, turf.point([coords[0][1], coords[0][0]]));
             const distToEnd = turf.distance(startPt, turf.point([coords[coords.length-1][1], coords[coords.length-1][0]]));
-            
-            if (distToEnd < distToStart) {
-                coords.reverse();
+            if (distToEnd < distToStart) coords.reverse();
+
+            // 5. LE GARDE-FOU (Sanity Check)
+            // Si le chemin calculé est délirant (ex: boucle de 2km pour faire 50m), Turf s'est trompé de sens.
+            let pathLength = turf.length(sliced, {units: 'meters'});
+            if (pathLength > straightDistance * 2.5) {
+                // Fallback de sécurité : on snap juste le départ et l'arrivée, en ligne droite.
+                return [
+                    [sS.geometry.coordinates[1], sS.geometry.coordinates[0]],
+                    [sE.geometry.coordinates[1], sE.geometry.coordinates[0]]
+                ];
             }
+
             return coords; 
         }
-    } catch (e) {}
+    } catch (e) {
+        console.error(`[Turf] Erreur Ligne ${route_short_name} (ID: ${id}):`, e.message);
+    }
     
     return [[old_lat, old_lon], [latitude, longitude]];
 }
 
-
-// --- ANCIENNES ROUTES API (Ne changent pas) ---
+// --- ROUTES API ---
 app.get('/api/trams', (req, res) => { res.json(getCache()); });
 
 app.get('/api/shapes', async (req, res) => {
   try {
     const response = await fetch('https://data.montpellier3m.fr/sites/default/files/ressources/MMM_MMM_LigneTram.json');
-    const geojson = await response.json();
-    res.json(geojson);
+    res.json(await response.json());
   } catch (error) { res.status(500).json({ error: "Impossible" }); }
 });
 
@@ -159,6 +158,7 @@ app.get('/api/times/:stopId', async (req, res) => {
     const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
     let arrivals = [];
     const nowInSeconds = Math.floor(Date.now() / 1000);
+    
     feed.entity.forEach(entity => {
       if (entity.tripUpdate && entity.tripUpdate.stopTimeUpdate) {
         entity.tripUpdate.stopTimeUpdate.forEach(update => {
@@ -180,13 +180,8 @@ app.get('/api/times/:stopId', async (req, res) => {
   } catch (error) { res.status(500).json({ error: "Erreur" }); }
 });
 
-
-// ==========================================
-// WEBSOCKETS : ENVOI SÉCURISÉ
-// ==========================================
 io.on('connection', (socket) => {
   console.log('🔌 Un client est connecté !');
-  // On envoie le dernier calcul mis en cache pour ne pas casser la mémoire
   if (lastEnrichedData.length > 0) {
       socket.emit('trams-update', lastEnrichedData);
   }
@@ -200,19 +195,19 @@ async function startServer() {
   setInterval(() => {
     const rawData = getCache();
     if (rawData && rawData.length > 0) {
-      
+      const activeIds = new Set(rawData.map(v => v.id));
+
       lastEnrichedData = rawData.map(vehicle => {
           const path = calculatePathWithTurf(vehicle);
-          
-          // 2. On met à jour la mémoire du serveur APRES avoir calculé le chemin
           previousPositions[vehicle.id] = { lat: vehicle.latitude, lon: vehicle.longitude };
-
-          return {
-              ...vehicle,
-              calculatedPath: path
-          };
+          return { ...vehicle, calculatedPath: path };
       });
       
+      // OPTIMISATION : Nettoyage mémoire des anciennes positions
+      Object.keys(previousPositions).forEach(id => {
+        if (!activeIds.has(id)) delete previousPositions[id];
+      });
+
       io.emit('trams-update', lastEnrichedData);
     }
   }, 30000);
