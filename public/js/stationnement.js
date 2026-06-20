@@ -18,7 +18,7 @@ export async function fetchStationnement(stationnementLayer, userCoords, map) {
             },
             onEachFeature: function (feature, layer) {
                 let zoneName = feature.properties.zone || feature.properties.name || 'Inconnue';
-                layer.bindPopup(`<b>Stationnement sur voirie</b><br>📍 Zone ${zoneName}`);
+                layer.bindPopup(`<div class="popup-card"><div class="popup-title">🚘 Stationnement voirie</div><div class="popup-row"><span class="dest">Zone ${zoneName}</span></div></div>`);
             }
         }).addTo(stationnementLayer);
 
@@ -44,10 +44,10 @@ export async function fetchStationnement(stationnementLayer, userCoords, map) {
                 });
 
                 horoMarker.bindPopup(`
-                    <div style="text-align:center;">
-                        <b>⏱️ Horodateur le plus proche #${index + 1}</b><br>
-                        À environ <b>${Math.round(item.distance)} mètres</b> de vous.<br>
-                        <small>${item.feature.properties.secteur || ''}</small>
+                    <div class="popup-card">
+                        <div class="popup-title">⏱️ Horodateur #${index + 1}</div>
+                        <div class="popup-row"><span class="dest">À environ</span><span class="arrival-time">${Math.round(item.distance)} m</span></div>
+                        ${item.feature.properties.secteur ? `<div class="popup-empty">${item.feature.properties.secteur}</div>` : ''}
                     </div>
                 `);
                 horoMarker.addTo(stationnementLayer);

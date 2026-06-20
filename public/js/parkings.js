@@ -37,17 +37,12 @@ export async function fetchParkings(parkingsLayer) {
                 });
 
                 const popupHtml = `
-                    <div style="text-align:center; min-width: 160px; font-family: sans-serif;">
-                        <b style="font-size: 14px;">🅿️ ${name}</b><hr style="margin:8px 0; border: 0; border-top: 1px solid #ccc;">
-                        <div style="display:flex; justify-content: space-around; margin-top: 10px;">
-                            <div style="text-align: center;">
-                                <b style="font-size: 20px; color: #007BFF;">${dispo}</b><br>
-                                <span style="font-size: 12px; color: #666;">Places dispo</span>
-                            </div>
-                            <div style="text-align: center; border-left: 1px solid #eee; padding-left: 15px;">
-                                <b style="font-size: 20px; color: #333;">${total}</b><br>
-                                <span style="font-size: 12px; color: #666;">Total</span>
-                            </div>
+                    <div class="popup-card">
+                        <div class="popup-title">🅿️ ${name}</div>
+                        <hr class="popup-sep">
+                        <div class="popup-stats">
+                            <div class="stat"><div class="stat-num c-parking">${dispo}</div><div class="stat-label">Places dispo</div></div>
+                            <div class="stat"><div class="stat-num">${total}</div><div class="stat-label">Total</div></div>
                         </div>
                     </div>
                 `;

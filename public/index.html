@@ -2,47 +2,56 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Montpellier Mobilité Tracker</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <button id="burger-btn" onclick="toggleMenu()">☰</button>
-
-<div id="side-menu">
-    <div class="menu-header">
-        <h3>Mobilité Montpellier</h3>
-        <button class="close-btn" onclick="toggleMenu()">×</button>
-    </div>
-    <div class="menu-content">
-        <p>Afficher sur la carte :</p>
-        <button class="menu-btn tram-btn active" onclick="setMode('trams', this)">🚋 Trams</button>
-        <button class="menu-btn velo-btn" onclick="setMode('velos', this)">🚲 Vélos</button>
-        <button class="menu-btn parking-btn" onclick="setMode('parkings', this)">🅿️ Parkings</button>
-        <button class="menu-btn stationnement-btn" onclick="setMode('stationnement', this)">🚘 Stationnement (Rue)</button>
-    </div>
-</div>
-
-<div id="menu-overlay" onclick="toggleMenu()"></div>
-
+    <!-- Recherche (visible en mode trams) -->
     <div id="search-box">
-        <input type="text" id="search-input" placeholder="Rechercher un arrêt de tram..." oninput="filterSearch()">
+        <div class="search-field">
+            <span class="search-icon" aria-hidden="true">🔍</span>
+            <input type="text" id="search-input" placeholder="Rechercher un arrêt…" oninput="filterSearch()">
+        </div>
         <ul id="search-results"></ul>
     </div>
 
-    <div id="controls">
-        <button id="bug-btn" onclick="reportBug()"> Bug :( </button>
-    </div>
+    <!-- Signaler un bug -->
+    <button id="bug-btn" onclick="reportBug()" aria-label="Signaler un bug" title="Signaler un bug">🐞</button>
 
+    <!-- Carte -->
     <div id="map"></div>
+
+    <!-- Recentrer sur ma position -->
+    <button id="locate-btn" onclick="locateUser()" aria-label="Me localiser" title="Me localiser">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3.5"/>
+            <line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/>
+            <line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>
+        </svg>
+    </button>
+
+    <!-- Navigation par onglets -->
+    <nav id="bottom-nav">
+        <button class="nav-btn active" data-mode="trams" onclick="setMode('trams', this)">
+            <span class="nav-icon" aria-hidden="true">🚋</span><span>Trams</span>
+        </button>
+        <button class="nav-btn" data-mode="velos" onclick="setMode('velos', this)">
+            <span class="nav-icon" aria-hidden="true">🚲</span><span>Vélos</span>
+        </button>
+        <button class="nav-btn" data-mode="parkings" onclick="setMode('parkings', this)">
+            <span class="nav-icon" aria-hidden="true">🅿️</span><span>Parkings</span>
+        </button>
+        <button class="nav-btn" data-mode="stationnement" onclick="setMode('stationnement', this)">
+            <span class="nav-icon" aria-hidden="true">🚘</span><span>Voirie</span>
+        </button>
+    </nav>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/ewoken/Leaflet.MovingMarker@master/MovingMarker.js"></script>
-    <script src="https://infotram.tmaxmls.ovh/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
     <script type="module" src="/js/main.js"></script>
-
 </body>
 </html>

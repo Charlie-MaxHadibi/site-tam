@@ -2,6 +2,7 @@ import { setupTrams } from './trams.js';
 import { fetchVelos } from './velos.js';
 import { fetchParkings } from './parkings.js';
 import { fetchStationnement } from './stationnement.js';
+import { API_BASE } from './config.js';
 
 // --- INITIALISATION DE LA CARTE ---
 const map = L.map('map', { zoomControl: false }).setView([43.611, 3.8767], 14);
@@ -36,29 +37,14 @@ const userLocationLayer = L.layerGroup().addTo(map);
 let currentMode = 'trams';
 let userCoords = null;
 let stationMarkers = {}; // Pour la barre de recherche
-let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [] }; // Pour Turf.js (nouveau trams.js)
 let forceTramRender = null;
-
-// --- GESTION DU MENU BURGER ---
-window.toggleMenu = function() {
-    const menu = document.getElementById('side-menu');
-    const overlay = document.getElementById('menu-overlay');
-    
-    if (menu.classList.contains('open')) {
-        menu.classList.remove('open');
-        if(overlay) overlay.style.display = 'none';
-    } else {
-        menu.classList.add('open');
-        if(overlay) overlay.style.display = 'block';
-    }
-};
 
 // --- GESTION DES MODES ---
 window.setMode = function(mode, btnElement) {
     currentMode = mode;
-    
-    document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('active'));
-    btnElement.classList.add('active');
+
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+    if (btnElement) btnElement.classList.add('active');
 
     const searchBox = document.getElementById('search-box');
 
@@ -78,9 +64,9 @@ window.setMode = function(mode, btnElement) {
         map.addLayer(tramMarkersLayer);
 
         if (forceTramRender) forceTramRender();
-    } 
+    }
     else if (mode === 'velos') {
-        if (searchBox) searchBox.style.display = 'none'; 
+        if (searchBox) searchBox.style.display = 'none';
         map.addLayer(velosLayer);
         if (Object.keys(velosLayer._layers).length === 0) fetchVelos(velosLayer);
     }
@@ -92,14 +78,8 @@ window.setMode = function(mode, btnElement) {
     else if (mode === 'stationnement') {
         if (searchBox) searchBox.style.display = 'none';
         map.addLayer(stationnementLayer);
-        stationnementLayer.clearLayers(); 
+        stationnementLayer.clearLayers();
         fetchStationnement(stationnementLayer, userCoords, map);
-    }
-
-    // 3. Fermer le menu si ouvert (mobile)
-    const sideMenu = document.getElementById('side-menu');
-    if (sideMenu && sideMenu.classList.contains('open')) {
-        if (typeof toggleMenu === 'function') toggleMenu();
     }
 };
 
@@ -159,6 +139,15 @@ function initUserLocation() {
     }
 }
 
+// --- RECENTRAGE SUR L'UTILISATEUR ---
+window.locateUser = function() {
+    if (userCoords) {
+        map.flyTo([userCoords.lat, userCoords.lon], 16, { animate: true, duration: 1 });
+    } else {
+        alert("Position non disponible. Active la géolocalisation puis réessaie.");
+    }
+};
+
 // --- REPORT DE BUG ---
 window.reportBug = function() {
     const ua = navigator.userAgent;          
@@ -178,34 +167,20 @@ async function init() {
     
     try {
         // 1. Récupération des tracés GPS des lignes (Shapes)
-        const responseShapes = await fetch('/api/shapes');
+        // Le serveur tague déjà chaque tracé avec sa couleur (properties.color).
+        const responseShapes = await fetch(`${API_BASE}/api/shapes`);
         const geojsonShapes = await responseShapes.json();
-        
+
         L.geoJSON(geojsonShapes, {
-            style: function(feature) {
-                const vals = Object.values(feature.properties).map(v => String(v).trim().toLowerCase());
-                let num = null;
-                if (vals.includes('1') || vals.includes('ligne 1')) num = '1';
-                if (vals.includes('2') || vals.includes('ligne 2')) num = '2';
-                if (vals.includes('3') || vals.includes('ligne 3')) num = '3';
-                if (vals.includes('4') || vals.includes('ligne 4')) num = '4';
-
-                // SAUVEGARDE DE LA GÉOMÉTRIE POUR LE NOUVEAU TRAMS.JS
-                if (num && feature.geometry.type === 'LineString') {
-                    tramLinesGeometry[num].push(feature);
-                }
-
-                const colorMap = { '1': '#0055A4', '2': '#EE7F00', '3': '#A8A900', '4': '#8F6E3B' };
-                return { color: num ? colorMap[num] : '#888', weight: 4, opacity: 0.8 };
-            }
+            style: (feature) => ({ color: feature.properties.color || '#888', weight: 4, opacity: 0.8 })
         }).addTo(tramLinesLayer);
 
         // 2. Initialisation des Trams (Maintenant qu'on a les tracés)
-        setupTrams(map, tramMarkersLayer, () => currentMode, tramLinesGeometry);
+        // Un seul appel : il ouvre la connexion Socket.io et renvoie la fonction de rendu.
         forceTramRender = setupTrams(map, tramMarkersLayer, () => currentMode);
 
         // 3. Récupération et affichage interactif des arrêts de tram
-        const responseStops = await fetch('/api/stops');
+        const responseStops = await fetch(`${API_BASE}/api/stops`);
         const stops = await responseStops.json();
         
         stops.forEach(station => {
@@ -218,28 +193,32 @@ async function init() {
 
             // Affichage des horaires en temps réel au clic
             circle.on('click', async () => {
-                circle.bindPopup(`<div style="text-align:center;"><b>${station.name}</b><br>⏳ Calcul...</div>`).openPopup();
+                circle.bindPopup(`<div class="popup-card"><div class="popup-title">${station.name}</div><div class="popup-empty">⏳ Calcul…</div></div>`).openPopup();
                 try {
                     let arrivals = [];
                     for (let id of station.ids) {
-                        const res = await fetch(`https://infotram.tmaxmls.ovh/api/times/${id}`);
+                        const res = await fetch(`${API_BASE}/api/times/${id}`);
                         const times = await res.json();
                         arrivals = arrivals.concat(times);
                     }
                     arrivals.sort((a, b) => a.minutes - b.minutes);
-                    let html = `<div style="min-width: 200px;"><b>📍 ${station.name}</b><hr style="margin:8px 0;">`;
+
+                    let html = `<div class="popup-card"><div class="popup-title">📍 ${station.name}</div><hr class="popup-sep">`;
                     if (arrivals.length === 0) {
-                        html += `<i>Aucun tram prévu prochainement</i>`;
+                        html += `<div class="popup-empty">Aucun tram prévu prochainement</div>`;
                     } else {
                         arrivals.slice(0, 4).forEach((t) => {
-                            let line = String(t.routeId).replace(/^0+/, ''); 
-                            let time = t.minutes === 0 ? "<b style='color:green;'>À l'approche</b>" : `<b>${t.minutes} min</b>`;
-                            html += `<div style="margin-bottom:6px; font-size:13px;"><span style="display:inline-block; width:18px; text-align:center; background:#ddd; border-radius:3px; margin-right:4px;"><b>${line}</b></span> vers ${t.headsign}<br><span style="margin-left: 26px;">⏱️ ${time}</span></div>`;
+                            const line = String(t.routeId).replace(/^0+/, '') || '?';
+                            const cls = ['1', '2', '3', '4', '5'].includes(line) ? `l${line}` : 'lx';
+                            const time = t.minutes === 0
+                                ? `<span class="arrival-time soon">À l'approche</span>`
+                                : `<span class="arrival-time">${t.minutes} min</span>`;
+                            html += `<div class="popup-row"><span class="line-badge ${cls}">${line}</span><span class="dest">vers ${t.headsign}</span>${time}</div>`;
                         });
                     }
                     html += `</div>`;
                     circle.setPopupContent(html);
-                } catch (e) { circle.setPopupContent(`❌ Info indisponible`); }
+                } catch (e) { circle.setPopupContent(`<div class="popup-card"><div class="popup-empty">❌ Info indisponible</div></div>`); }
             });
             circle.addTo(tramStopsLayer);
         });

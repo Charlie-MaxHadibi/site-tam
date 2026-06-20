@@ -1,13 +1,15 @@
+import { API_BASE } from './config.js';
+
 // La fonction n'a plus besoin de tramLinesGeometry puisque le calcul Turf est fait côté serveur
 export function setupTrams(map, markersLayer, getCurrentMode) {
-    const socket = io();
+    // Sur le web : même origine. En natif : on cible le serveur de prod.
+    const socket = API_BASE ? io(API_BASE) : io();
     let markers = {};
     let lastVehiclesData = [];
 
     socket.on('trams-update', (data) => {
         lastVehiclesData = data || [];
         renderTrams();
-        return renderTrams;
     });
 
     function renderTrams() {
@@ -75,7 +77,10 @@ export function setupTrams(map, markersLayer, getCurrentMode) {
                 }
 
                 // 3. Durée de l'animation
-                const animationDuration = 28000; 
+                // On rejoue le tronçon réellement parcouru ; on le fait glisser sur un peu
+                // moins que l'intervalle (28 s) pour arriver sur la dernière position connue
+                // juste avant la mise à jour suivante.
+                const animationDuration = 28000;
                 let durations = [];
 
                 if (pathTotalDist < 5) {
@@ -98,8 +103,11 @@ export function setupTrams(map, markersLayer, getCurrentMode) {
                 }
             });
  
-        } catch (e) { 
-            console.error("Erreur d'affichage des trams:", e); 
+        } catch (e) {
+            console.error("Erreur d'affichage des trams:", e);
         }
     }
+
+    // On renvoie la fonction de rendu pour permettre un re-rendu forcé (ex: retour sur le mode "trams")
+    return renderTrams;
 }

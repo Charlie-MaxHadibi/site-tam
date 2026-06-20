@@ -1,168 +1,156 @@
-body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
-        #map { height: 100vh; width: 100vw; }
-        
-        .tram-icon {
-            width: 30px;
-            height: 30px;
-            border: 2px solid white; 
-            border-radius: 50%; 
-            display: flex;
-            align-items: center; 
-            justify-content: center; 
-            color: white;
-            font-weight: bold; 
-            font-size: 12px; 
-            text-shadow: 1px 1px 2px black;
-        }
+/* ===== Design tokens ===== */
+:root {
+  --bg-elev: #ffffff;
+  --surface: #f4f4f6;
+  --text: #1a1a1c;
+  --text-muted: #6b6b72;
+  --border: rgba(0, 0, 0, 0.10);
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  --radius: 14px;
+  --radius-sm: 10px;
 
-        #top-menu {
-            position: absolute;
-            top: 15px; left: 50%; transform: translateX(-50%);
-            z-index: 1000; display: flex; gap: 10px;
-            background: white; padding: 6px; border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3); white-space: nowrap;
-        }
-        .menu-btn {
-            padding: 8px 16px; border: none; border-radius: 4px;
-            background: transparent; font-size: 15px; font-weight: bold;
-            cursor: pointer; transition: background 0.2s; color: #333;
-        }
-        
-        /* Couleurs dynamiques selon le mode actif */
-        .menu-btn.active.tram-btn { background: #0055A4; color: white; }
-        .menu-btn.active.velo-btn { background: #4CAF50; color: white; } 
-        .menu-btn.active.parking-btn { background: #007BFF; color: white; }
+  --accent: #0055A4;
+  --line-1: #0055A4;
+  --line-2: #EE7F00;
+  --line-3: #A8A900;
+  --line-4: #8F6E3B;
+  --line-5: #9bcaff;
+  --velo: #2e9e5b;
+  --parking: #1f7ae0;
+  --voirie: #E91E63;
+  --warn: #e08a1e;
+  --success: #2e9e5b;
 
-        #controls, #search-box {
-            position: absolute; z-index: 1000; background: white;
-            padding: 12px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
+  --z-ui: 1000;
+  --z-nav: 1100;
+}
 
-        #search-box { 
-            top: 15px; /* Remonte la barre de recherche */
-            left: 15px; 
-            right: 70px; /* Laisse de la place au bouton burger sur mobile */
-            max-width: 400px; 
-            margin: 0 auto; 
-        }
-        #search-input { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-elev: #2a2a2e;
+    --surface: #303036;
+    --text: #f2f2f5;
+    --text-muted: #a2a2aa;
+    --border: rgba(255, 255, 255, 0.12);
+    --shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  }
+}
 
-        #controls { 
-            top: auto; bottom: 30px; right: 15px; 
-            padding: 0; background: transparent; box-shadow: none;
-        }
+/* ===== Base ===== */
+* { box-sizing: border-box; }
+body, html {
+  margin: 0; padding: 0; height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--text);
+}
+#map { position: absolute; inset: 0; height: 100%; width: 100%; }
 
-        #search-results {
-            max-height: 200px; overflow-y: auto; background: white;
-            border-radius: 0 0 4px 4px; list-style: none; padding: 0; margin: 0; display: none; 
-        }
+/* Remonte l'attribution Leaflet au-dessus de la barre d'onglets */
+.leaflet-bottom { bottom: 72px; }
 
-        #search-results li { padding: 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 14px; }
-        #search-results li:hover { background: #f0f0f0; }
-        
-        @media (prefers-color-scheme: dark) {
-            #search-box, #search-results, #top-menu { background: #2a2a2a; color: #f0f0f0; }
-            #search-input { background: #3a3a3a; color: #f0f0f0; border: 1px solid #555; }
-            #search-results li { border-bottom: 1px solid #444; }
-            #search-results li:hover { background: #444; }
-            .menu-btn { color: #f0f0f0; }
-            .menu-btn.active.tram-btn { background: #0055A4; color: white; }
-            .menu-btn.active.velo-btn { background: #4CAF50; color: white; }
-            .menu-btn.active.parking-btn { background: #007BFF; color: white; }
-            .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #2a2a2a; color: #f0f0f0; }
-        }
+/* ===== Marqueur tram ===== */
+.tram-icon {
+  width: 30px; height: 30px;
+  border: 2px solid #fff; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 600; font-size: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
 
-        #bug-btn {
-            background-color: #ff4d4d; color: white; border: none;
-            border-radius: 8px; padding: 10px 15px; font-weight: bold;
-            cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        #bug-btn:hover { background-color: #cc0000; }
-        /* Bouton Burger */
-        #burger-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            z-index: 1100;
-            background: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 8px;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
+/* ===== Barre de recherche ===== */
+#search-box {
+  position: absolute; top: 14px; left: 14px; right: 66px;
+  max-width: 420px; z-index: var(--z-ui);
+}
+.search-field {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 0 12px;
+}
+.search-icon { font-size: 15px; opacity: 0.7; }
+#search-input {
+  flex: 1; border: none; background: transparent; color: var(--text);
+  font-size: 16px; padding: 12px 0; outline: none; font-family: inherit;
+}
+#search-results {
+  list-style: none; margin: 6px 0 0; padding: 6px 0; display: none;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  max-height: 240px; overflow-y: auto;
+}
+#search-results li { padding: 11px 14px; cursor: pointer; font-size: 14px; color: var(--text); }
+#search-results li:hover { background: var(--surface); }
 
-        /* Menu Latéral */
-        #side-menu {
-            position: fixed;
-            top: 0;
-            right: -280px; /* Caché par défaut */
-            width: 280px;
-            height: 100%;
-            background: white;
-            z-index: 1200;
-            transition: 0.3s ease;
-            box-shadow: -2px 0 10px rgba(0,0,0,0.2);
-            display: flex;
-            flex-direction: column;
-        }
+/* ===== Boutons flottants ===== */
+#bug-btn, #locate-btn {
+  position: absolute; z-index: var(--z-ui);
+  background: var(--bg-elev); border: 1px solid var(--border);
+  box-shadow: var(--shadow); border-radius: 50%; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text); transition: transform 0.1s ease;
+}
+#bug-btn:active, #locate-btn:active { transform: scale(0.94); }
+#bug-btn { top: 14px; right: 14px; width: 42px; height: 42px; font-size: 18px; }
+#locate-btn { right: 14px; bottom: 84px; width: 46px; height: 46px; color: var(--accent); }
 
-        #side-menu.open {
-            right: 0;
-        }
+/* ===== Navigation par onglets ===== */
+#bottom-nav {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z-nav);
+  display: flex; background: var(--bg-elev);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.nav-btn {
+  flex: 1; border: none; background: transparent; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; padding: 8px 0 10px; font-size: 11px; font-family: inherit;
+  color: var(--text-muted); border-top: 2px solid transparent; margin-top: -1px;
+  -webkit-tap-highlight-color: transparent;
+}
+.nav-icon { font-size: 20px; line-height: 1; }
+.nav-btn.active { color: var(--accent); border-top-color: var(--accent); font-weight: 600; }
+.nav-btn[data-mode="trams"].active        { --accent: var(--line-1); }
+.nav-btn[data-mode="velos"].active        { --accent: var(--velo); }
+.nav-btn[data-mode="parkings"].active     { --accent: var(--parking); }
+.nav-btn[data-mode="stationnement"].active{ --accent: var(--voirie); }
 
-        /* En-tête du menu */
-        .menu-header {
-            padding: 20px;
-            background: #f8f8f8;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #eee;
-        }
+/* ===== Popups ===== */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-elev); color: var(--text);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+}
+.leaflet-popup-tip { background: var(--bg-elev); }
+.leaflet-popup-content { margin: 12px 14px; font-family: inherit; }
 
-        .menu-content {
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
+.popup-card { min-width: 190px; }
+.popup-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 15px; font-weight: 600; color: var(--text); margin: 0 0 4px;
+}
+.popup-sep { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
+.popup-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+.popup-row .dest { flex: 1; color: var(--text-muted); }
+.popup-empty { color: var(--text-muted); font-style: italic; font-size: 13px; }
 
-        .menu-content p {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 5px;
-        }
+.line-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 6px;
+  color: #fff; font-size: 12px; font-weight: 600;
+}
+.line-badge.l1 { background: var(--line-1); }
+.line-badge.l2 { background: var(--line-2); }
+.line-badge.l3 { background: var(--line-3); }
+.line-badge.l4 { background: var(--line-4); }
+.line-badge.l5 { background: var(--line-5); color: #0a3a66; }
+.line-badge.lx { background: #888; }
 
-        /* Ajustement des boutons dans le menu */
-        .menu-btn {
-            width: 100%;
-            text-align: left;
-            padding: 15px;
-            border: 1px solid #eee;
-            background: #fff;
-            border-radius: 8px;
-            font-size: 16px;
-        }
+.arrival-time { font-weight: 600; color: var(--text); white-space: nowrap; }
+.arrival-time.soon { color: var(--success); }
 
-        /* Overlay sombre */
-        #menu-overlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5);
-            display: none;
-            z-index: 1150;
-        }
-
-        /* Adaptation Mode Sombre */
-        @media (prefers-color-scheme: dark) {
-            #side-menu, .menu-header, #burger-btn { background: #2a2a2a; color: #f0f0f0; }
-            .menu-header { border-bottom: 1px solid #444; }
-            .menu-btn { border-color: #444; color: #f0f0f0; }
-        }
-        .menu-btn.active.stationnement-btn { background: #E91E63; color: white; } /* Un rose/rouge pour le distinguer du bleu des parkings */
-        @media (prefers-color-scheme: dark) {
-            .menu-btn.active.stationnement-btn { background: #E91E63; color: white; }
-        }
+.popup-stats { display: flex; gap: 14px; }
+.stat { flex: 1; text-align: center; }
+.stat-num { font-size: 22px; font-weight: 600; line-height: 1.1; }
+.stat-label { font-size: 12px; color: var(--text-muted); }
+.c-velo { color: var(--velo); }
+.c-parking { color: var(--parking); }
+.c-warn { color: var(--warn); }

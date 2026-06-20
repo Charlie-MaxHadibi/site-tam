@@ -1,9 +1,12 @@
 import axios from 'axios';
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings';
 import * as gtfs from 'gtfs';
+import { LINE_COLORS } from './lines.js';
 
 let vehicleCache = [];
-let vehicleHistory = {}; 
+let vehicleHistory = {};
+let tripUpdatesByStop = new Map(); // stopId -> [{ routeId, tripId, time }] (cache des horaires temps réel)
+let onUpdateCallback = null; // Appelé à chaque rafraîchissement du cache (sync émission temps réel)
 
 // OPTIMISATION : Cache en RAM pour éviter de marteler SQLite (Requêtes N+1)
 const staticMetadataCache = new Map();
@@ -37,14 +40,16 @@ async function updateRealtimeData() {
           route_type: null
         };
 
-        // Définition des couleurs de base
+        // Définition des couleurs de base (depuis la config partagée des lignes)
         if (tripId || routeId) {
-          let idStr = tripId ? tripId.toLowerCase() : ''; 
-          if (idStr.includes('ligne 1') || routeId == '1' || routeId == '01') { extraInfo.route_color = '#0055A4'; extraInfo.route_type = 0; }
-          if (idStr.includes('ligne 2') || routeId == '2' || routeId == '02') { extraInfo.route_color = '#EE7F00'; extraInfo.route_type = 0; }
-          if (idStr.includes('ligne 3') || routeId == '3' || routeId == '03') { extraInfo.route_color = '#A8A900'; extraInfo.route_type = 0; }
-          if (idStr.includes('ligne 4') || routeId == '4' || routeId == '04') { extraInfo.route_color = '#8F6E3B'; extraInfo.route_type = 0; }
-          if (idStr.includes('ligne 5') || routeId == '5' || routeId == '05') { extraInfo.route_color = 'rgb(155, 202, 255)'; extraInfo.route_type = 0; }
+          const idStr = tripId ? tripId.toLowerCase() : '';
+          for (const n of ['1', '2', '3', '4', '5']) {
+            if (idStr.includes(`ligne ${n}`) || routeId == n || routeId == `0${n}`) {
+              extraInfo.route_color = LINE_COLORS[n];
+              extraInfo.route_type = 0;
+              break;
+            }
+          }
         }
 
         // OPTIMISATION : Vérification du cache avant d'interroger SQLite
@@ -106,18 +111,63 @@ async function updateRealtimeData() {
 
     vehicleCache = updatedVehicles;
     console.log(`[Worker] Updated cache with ${vehicleCache.length} vehicles.`);
+
+    // Notifie le serveur dès que des données fraîches sont disponibles.
+    if (onUpdateCallback) onUpdateCallback(vehicleCache);
   } catch (error) {
     console.error('[Worker] Error updating real-time data:', error.message);
   }
 }
 
-function startWorker() {
+// Récupère et met en cache les horaires temps réel (TripUpdate.pb), indexés par arrêt.
+// Évite de retélécharger l'intégralité du flux à chaque clic sur un arrêt.
+async function updateTripUpdates() {
+  try {
+    const url = process.env.GTFS_TRIPUPDATE_URL || 'https://data.montpellier3m.fr/GTFS/Urbain/TripUpdate.pb';
+    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
+      new Uint8Array(response.data)
+    );
+
+    const byStop = new Map();
+    for (const entity of feed.entity) {
+      const tu = entity.tripUpdate;
+      if (!tu || !tu.stopTimeUpdate) continue;
+      const routeId = tu.trip ? tu.trip.routeId : null;
+      const tripId = tu.trip ? tu.trip.tripId : null;
+
+      for (const stu of tu.stopTimeUpdate) {
+        if (!stu.stopId || !stu.arrival || !stu.arrival.time) continue;
+        // time peut être un Long (objet) -> on prend .low (secondes Unix)
+        const time = typeof stu.arrival.time === 'object' ? stu.arrival.time.low : stu.arrival.time;
+        if (!byStop.has(stu.stopId)) byStop.set(stu.stopId, []);
+        byStop.get(stu.stopId).push({ routeId, tripId, time });
+      }
+    }
+
+    tripUpdatesByStop = byStop;
+    console.log(`[Worker] TripUpdates mis en cache pour ${byStop.size} arrêts.`);
+  } catch (error) {
+    console.error('[Worker] Error updating trip updates:', error.message);
+  }
+}
+
+function startWorker(onUpdate) {
+  onUpdateCallback = typeof onUpdate === 'function' ? onUpdate : null;
+  const interval = Number(process.env.UPDATE_INTERVAL_MS) || 30000;
+
   updateRealtimeData();
-  setInterval(updateRealtimeData, process.env.UPDATE_INTERVAL_MS || 30000);
+  updateTripUpdates();
+  setInterval(updateRealtimeData, interval);
+  setInterval(updateTripUpdates, interval);
 }
 
 function getCache() {
   return vehicleCache;
 }
 
-export { startWorker, getCache };
+function getTripUpdates() {
+  return tripUpdatesByStop;
+}
+
+export { startWorker, getCache, getTripUpdates };
