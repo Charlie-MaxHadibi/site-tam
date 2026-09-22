@@ -1,3 +1,5 @@
+import { escapeHtml } from './util.js';
+
 export async function fetchStationnement(stationnementLayer, userCoords, map) {
     try {
         // 1. Zones de stationnement
@@ -18,7 +20,7 @@ export async function fetchStationnement(stationnementLayer, userCoords, map) {
             },
             onEachFeature: function (feature, layer) {
                 let zoneName = feature.properties.zone || feature.properties.name || 'Inconnue';
-                layer.bindPopup(`<div class="popup-card"><div class="popup-title">🚘 Stationnement voirie</div><div class="popup-row"><span class="dest">Zone ${zoneName}</span></div></div>`);
+                layer.bindPopup(`<div class="pop-card"><div class="pop-title"><svg class="ic" aria-hidden="true"><use href="#i-car"/></svg>Stationnement voirie</div><div class="pop-lbl" style="margin-top:6px">Zone ${escapeHtml(zoneName)}</div></div>`);
             }
         }).addTo(stationnementLayer);
 
@@ -44,10 +46,9 @@ export async function fetchStationnement(stationnementLayer, userCoords, map) {
                 });
 
                 horoMarker.bindPopup(`
-                    <div class="popup-card">
-                        <div class="popup-title">⏱️ Horodateur #${index + 1}</div>
-                        <div class="popup-row"><span class="dest">À environ</span><span class="arrival-time">${Math.round(item.distance)} m</span></div>
-                        ${item.feature.properties.secteur ? `<div class="popup-empty">${item.feature.properties.secteur}</div>` : ''}
+                    <div class="pop-card">
+                        <div class="pop-title"><svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>Horodateur</div>
+                        <div class="pop-lbl" style="margin-top:6px">à environ ${Math.round(item.distance)} m${item.feature.properties.secteur ? ' · ' + escapeHtml(item.feature.properties.secteur) : ''}</div>
                     </div>
                 `);
                 horoMarker.addTo(stationnementLayer);

@@ -19,6 +19,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
 
       - name:  Installer Java (JDK 21 pour Android)
         uses: actions/setup-java@v4
@@ -27,7 +28,7 @@ jobs:
           java-version: '21'
 
       - name:  Installer les dépendances NPM
-        run: npm install
+        run: npm ci
 
       - name:  Synchroniser le web vers Android
         run: npx cap sync android

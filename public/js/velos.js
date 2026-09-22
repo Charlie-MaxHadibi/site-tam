@@ -1,51 +1,35 @@
+import { escapeHtml } from './util.js';
+import { API_BASE } from './config.js';
+
+// Vert s'il reste des vélos, orange s'il n'en reste qu'un ou deux, rouge/gris si vide ou HS.
+function colorFor(s) {
+    if (s.offline) return '#9aa1ab';
+    if (s.bikes === 0) return '#e0402e';
+    if (s.bikes <= 2) return '#e08a1e';
+    return '#1f9d55';
+}
+
 export async function fetchVelos(velosLayer) {
-    console.log("🚲 Chargement des vélos (API Fiware) lancé...");
-    const OPEN_DATA_URL = 'https://portail-api-data.montpellier3m.fr';
-    
     try {
-        const response = await fetch(`${OPEN_DATA_URL}/bikestation?limit=1000`);
-        if (!response.ok) throw new Error("Erreur réseau: " + response.status);
-        const stations = await response.json();
-        
-        stations.forEach(station => {
-            const name = station.address?.value?.streetAddress || "Station Vélomagg";
-            const availableBikes = station.availableBikeNumber?.value || 0;
-            const freeSlots = station.freeSlotNumber?.value || 0;
-            
-            let lat = 0, lon = 0;
-            if (station.location?.value?.coordinates) {
-                const coords = station.location.value.coordinates;
-                if (typeof coords[0] === 'string') {
-                    const parts = coords[0].split(',');
-                    lon = parseFloat(parts[0].trim());
-                    lat = parseFloat(parts[1].trim());
-                } else if (coords.length >= 2) {
-                    lon = coords[0];
-                    lat = coords[1];
-                }
-            }
+        const stations = await fetch(`${API_BASE}/api/velos`).then(r => r.json());
+        if (!Array.isArray(stations)) throw new Error('réponse inattendue');
 
-            if (lat !== 0 && lon !== 0) {
-                const marker = L.circleMarker([lat, lon], {
-                    radius: 8, fillColor: '#4CAF50', color: '#ffffff', weight: 2, opacity: 1, fillOpacity: 0.9
-                });
-
-                const popupHtml = `
-                    <div class="popup-card">
-                        <div class="popup-title">🚲 ${name}</div>
-                        <hr class="popup-sep">
-                        <div class="popup-stats">
-                            <div class="stat"><div class="stat-num c-velo">${availableBikes}</div><div class="stat-label">Vélos dispo</div></div>
-                            <div class="stat"><div class="stat-num c-warn">${freeSlots}</div><div class="stat-label">Places libres</div></div>
-                        </div>
+        stations.forEach(s => {
+            const marker = L.circleMarker([s.lat, s.lon], {
+                radius: 7, fillColor: colorFor(s), color: '#ffffff', weight: 2, opacity: 1, fillOpacity: 0.95,
+            });
+            marker.bindPopup(`
+                <div class="pop-card">
+                    <div class="pop-title"><svg class="ic" aria-hidden="true"><use href="#i-bike"/></svg>${escapeHtml(s.name)}</div>
+                    <div class="pop-stats">
+                        <div class="pop-stat"><div class="pop-num ok">${s.bikes}</div><div class="pop-lbl">vélos dispo</div></div>
+                        <div class="pop-stat"><div class="pop-num">${s.docks}</div><div class="pop-lbl">places libres</div></div>
                     </div>
-                `;
-                marker.bindPopup(popupHtml);
-                marker.addTo(velosLayer);
-            }
+                    ${s.offline ? '<div class="pop-lbl" style="margin-top:8px">station hors service</div>' : ''}
+                </div>`);
+            marker.addTo(velosLayer);
         });
-        console.log("✅ Vélos affichés avec succès !");
-    } catch (error) { 
-        console.error("❌ Erreur Vélos:", error); 
+    } catch (error) {
+        console.error('Erreur Vélos :', error.message);
     }
 }

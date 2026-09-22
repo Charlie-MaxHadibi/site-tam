@@ -1,24 +1,22 @@
-FROM node:20-slim
+# --- Étape build : compile les dépendances natives (better-sqlite3) ---
+FROM node:22-slim AS build
 
-# Install build dependencies for better-sqlite3
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    sqlite3 \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
 COPY package*.json ./
+RUN npm ci --omit=dev
 
-RUN npm install
+# --- Étape runtime : image finale, sans les outils de compilation ---
+FROM node:22-slim
 
+WORKDIR /app
+COPY --from=build /app/node_modules ./node_modules
 COPY . .
 
-# Create data directory for SQLite
 RUN mkdir -p data
 
 EXPOSE 3000
-
 CMD ["npm", "start"]

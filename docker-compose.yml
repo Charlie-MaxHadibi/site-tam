@@ -12,8 +12,15 @@ services:
       - GTFS_REALTIME_URL=https://data.montpellier3m.fr/GTFS/Urbain/VehiclePosition.pb
       - GTFS_TRIPUPDATE_URL=https://data.montpellier3m.fr/GTFS/Urbain/TripUpdate.pb
       - SQLITE_PATH=data/gtfs.db
-      - UPDATE_INTERVAL_MS=30000
+      - UPDATE_INTERVAL_MS=15000
+      - TRIPUPDATE_INTERVAL_MS=30000
       - GTFS_MAX_AGE_HOURS=24
       # Origines autorisées (CORS). Adapter au domaine de prod.
       - ALLOWED_ORIGINS=https://infotram.tmaxmls.ovh
     restart: always
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s

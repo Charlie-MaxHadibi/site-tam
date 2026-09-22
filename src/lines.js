@@ -10,11 +10,11 @@ export const LINE_COLORS = {
   '5': 'rgb(155, 202, 255)'
 };
 
-// Déduit le numéro de ligne ('1'..'4') à partir des propriétés d'un tracé GeoJSON,
+// Déduit le numéro de ligne ('1'..'5') à partir des propriétés d'un tracé GeoJSON,
 // dont le format n'est pas garanti (on cherche la valeur dans tous les champs).
 export function detectLine(properties) {
   const vals = Object.values(properties).map(v => String(v).trim().toLowerCase());
-  for (const n of ['1', '2', '3', '4']) {
+  for (const n of ['1', '2', '3', '4', '5']) {
     if (vals.includes(n) || vals.includes(`ligne ${n}`)) return n;
   }
   return null;
