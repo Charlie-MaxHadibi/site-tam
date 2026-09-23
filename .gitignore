@@ -4,5 +4,8 @@ node_modules/
 # Base de données (le serveur créera la sienne au démarrage)
 data/*.db
 
+# Cache local du tracé des lignes (régénéré automatiquement, cf. src/index.js)
+data/shapes-cache.json
+
 # Variables secrètes
 .env

@@ -80,9 +80,10 @@ test/
 |-------|-------------|
 | `GET /healthz` | Sonde de vivacité |
 | `GET /api/trams` | Dernières positions véhicules (cache RAM) |
-| `GET /api/shapes` | Tracés GeoJSON des lignes (tagués couleur, servis depuis la mémoire) |
+| `GET /api/shapes` | Tracés GeoJSON des lignes (tagués couleur, servis depuis la mémoire). Si la source TAM est indisponible/corrompue, repli automatique sur `data/shapes-cache.json` (dernière version valide reçue) ; retenté en tâche de fond jusqu'à récupérer une version fraîche. |
 | `GET /api/stops` | Arrêts de tram regroupés par nom (mémorisés au démarrage) |
-| `GET /api/times/:stopId` | Prochains passages à un arrêt (`epoch` + minutes, cache RAM) |
+| `GET /api/times/:stopId` | Temps réel : horaires à un arrêt sur 90 min (`epoch` + minutes, jusqu'à 40 passages, cache RAM) |
+| `GET /api/schedule/:stopId` | Horaires théoriques (GTFS statique) de toute la journée à un arrêt, tous passages, pour prévoir un trajet à l'avance. Regroupe les raccourcis/prolongements d'un même trajet (`mergeKey`, calculé par comparaison des arrêts réels), sans jamais fusionner deux vraies branches. Cache par (arrêt, jour). |
 | `GET /api/velos` | Stations Vélomagg + disponibilité temps réel (proxy de l'API FIWARE `portail-api-data.montpellier.fr`, cache 30 s) |
 | `GET /api/parkings` | Parkings en ouvrage : places libres / total en temps réel (même API, cache 45 s) |
 

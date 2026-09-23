@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import * as gtfs from 'gtfs';
 import cors from 'cors';
@@ -23,6 +24,11 @@ const MTP_API = 'https://portail-api-data.montpellier.fr';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Copie locale du dernier tracé de lignes récupéré avec succès. Le tracé ne change presque
+// jamais (hors travaux / nouvelle ligne) : si la source TAM est temporairement cassée, on
+// repart de cette copie au lieu d'une carte sans tracé.
+const SHAPES_CACHE_PATH = process.env.SHAPES_CACHE_PATH || path.join(__dirname, '../data/shapes-cache.json');
 
 // --- CORS : liste blanche (surchargeable via ALLOWED_ORIGINS, séparée par des virgules) ---
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ||
@@ -52,7 +58,13 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, '../public')));
 
 let tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [], '5': [] };
-let shapesGeoJson = null;        // GeoJSON des tracés (tagué ligne/couleur), servi par /api/shapes
+const EMPTY_FC = { type: 'FeatureCollection', features: [] };
+// GeoJSON des tracés (tagué ligne/couleur), servi par /api/shapes. Vide par défaut : si la
+// source TAM est indisponible/corrompue ET qu'aucun cache local n'existe, l'appli reste
+// utilisable (trams en ligne droite, pas de tracé coloré) plutôt que de planter.
+let shapesGeoJson = EMPTY_FC;
+// 'live' = tracé frais reçu de la TAM ; 'cache' = repli sur la dernière copie locale connue-bonne.
+let shapesSource = null;
 let stopsCache = null;           // Arrêts regroupés par nom, mémorisés au démarrage (voir /api/stops)
 let lastEnrichedData = [];
 
@@ -68,30 +80,74 @@ async function getHeadsign(tripId) {
   return headsign;
 }
 
-async function loadShapesInServerMemory() {
+function readShapesCache() {
   try {
-    console.log("🗺️ Chargement des tracés de tramways en mémoire...");
-    const response = await fetch(SHAPES_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    if (!response.ok) throw new Error('Erreur réseau');
-    const geojson = await response.json();
+    return JSON.parse(fs.readFileSync(SHAPES_CACHE_PATH, 'utf8'));
+  } catch {
+    return null; // pas de cache, ou cache illisible -> tant pis, pas grave
+  }
+}
 
-    tramLinesGeometry = { '1': [], '2': [], '3': [], '4': [], '5': [] };
-    geojson.features.forEach(feature => {
-      // On tague chaque tracé : le frontend lira directement properties.line / properties.color
-      // (plus de détection dupliquée côté client).
-      const num = detectLine(feature.properties);
-      feature.properties.line = num;
-      feature.properties.color = num ? LINE_COLORS[num] : '#888';
-
-      if (num && feature.geometry.type === 'LineString') {
-        tramLinesGeometry[num].push(feature);
-      }
-    });
-
-    shapesGeoJson = geojson; // mémorisé pour servir /api/shapes sans refaire l'appel distant
-    console.log("✅ Tracés mémorisés avec succès !");
+function writeShapesCache(geojson) {
+  try {
+    fs.mkdirSync(path.dirname(SHAPES_CACHE_PATH), { recursive: true });
+    fs.writeFileSync(SHAPES_CACHE_PATH, JSON.stringify(geojson));
   } catch (error) {
-    console.error("❌ Erreur mémorisation tracés:", error);
+    console.warn("⚠️ Impossible d'écrire le cache local des tracés :", error.message);
+  }
+}
+
+// Tague chaque tracé (ligne/couleur) et reconstruit la géométrie par ligne servant au
+// snapping (tramPath.js), puis mémorise le résultat pour /api/shapes.
+function applyShapes(geojson) {
+  const geometry = { '1': [], '2': [], '3': [], '4': [], '5': [] };
+  geojson.features.forEach(feature => {
+    const num = detectLine(feature.properties);
+    feature.properties.line = num;
+    feature.properties.color = num ? LINE_COLORS[num] : '#888';
+    if (num && feature.geometry.type === 'LineString') {
+      geometry[num].push(feature);
+    }
+  });
+  tramLinesGeometry = geometry;
+  shapesGeoJson = geojson;
+}
+
+async function fetchShapesFromTam() {
+  const response = await fetch(SHAPES_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+async function loadShapesInServerMemory() {
+  // Le tracé ne change quasiment jamais : 2 essais rapprochés suffisent contre une réponse
+  // tronquée passagère, sans avoir besoin de retenter en boucle immédiatement.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      console.log(`🗺️ Chargement des tracés de tramways depuis la TAM… (essai ${attempt}/2)`);
+      const geojson = await fetchShapesFromTam();
+      applyShapes(geojson);
+      writeShapesCache(geojson); // source TAM valide -> on rafraîchit la copie locale
+      shapesSource = 'live';
+      console.log("✅ Tracés mémorisés avec succès (source TAM) !");
+      return;
+    } catch (error) {
+      console.error(`❌ Erreur mémorisation tracés (essai ${attempt}/2) :`, error.message);
+      if (attempt === 1) await new Promise((r) => setTimeout(r, 5000));
+    }
+  }
+
+  // Source TAM indisponible/corrompue sur les 2 essais : on repart de la dernière version
+  // connue-bonne gardée sur disque plutôt que d'afficher une carte sans tracé.
+  if (shapesSource !== 'live') {
+    const cached = readShapesCache();
+    if (cached) {
+      applyShapes(cached);
+      shapesSource = 'cache';
+      console.log("↩️ Tracés restaurés depuis le cache local (data/shapes-cache.json).");
+    } else {
+      console.warn("⚠️ Aucun cache local de tracés disponible : carte sans tracé pour l'instant.");
+    }
   }
 }
 
@@ -126,13 +182,9 @@ app.use('/api', rateLimit({ windowMs: 60000, max: 120 }));
 
 app.get('/api/trams', (req, res) => { res.json(getCache()); });
 
-app.get('/api/shapes', async (req, res) => {
-  // Servi depuis la mémoire (chargé au démarrage). Repli sur l'appel distant si indisponible.
-  if (shapesGeoJson) return res.json(shapesGeoJson);
-  try {
-    const response = await fetch(SHAPES_URL, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-    res.json(await response.json());
-  } catch (error) { res.status(500).json({ error: "Impossible" }); }
+app.get('/api/shapes', (req, res) => {
+  // Servi depuis la mémoire (chargé au démarrage, jamais null : cf. EMPTY_FC).
+  res.json(shapesGeoJson);
 });
 
 app.get('/api/stops', async (req, res) => {
@@ -225,12 +277,139 @@ app.get('/api/times/:stopId', async (req, res) => {
       }))
       .sort((a, b) => a.epoch - b.epoch);
 
-    const topArrivals = arrivals.slice(0, 3);
-    for (const a of topArrivals) {
-      a.headsign = await getHeadsign(a.tripId);
-    }
-    res.json(topArrivals);
+    // On renvoie une fenêtre large (pas juste les 3 prochains) : le client regroupe par ligne
+    // et par direction pour afficher tous les horaires de l'arrêt (utile pour prévoir un trajet).
+    const windowed = arrivals.slice(0, 40);
+    await Promise.all(windowed.map(async (a) => { a.headsign = await getHeadsign(a.tripId); }));
+    res.json(windowed);
   } catch (error) { res.status(500).json({ error: "Erreur" }); }
+});
+
+// Horaires THÉORIQUES de toute la journée (GTFS statique, pas le temps réel) : utile pour
+// prévoir un trajet bien à l'avance, au-delà de la fenêtre de 90 min de /api/times.
+// Cache mémoire par (arrêt, date du jour) : la base ne change qu'au réimport GTFS quotidien.
+const scheduleCache = new Map();
+const todayServiceDate = () => {
+  const d = new Date();
+  return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+};
+
+// Deux trajets d'une même ligne/sens peuvent avoir des intitulés différents pour 2 raisons
+// bien distinctes :
+//  - un simple raccourci/prolongement (ex. ligne 1 : "Occitanie" s'arrête 8 arrêts avant le
+//    "Mosson" complet, mais suit exactement le même tracé) -> on peut les fusionner ;
+//  - une VRAIE branche (ex. ligne 3 : "Lattes Centre" et "Pérols Étang de l'Or" partagent le
+//    tronc commun jusqu'à Soriech puis divergent vers des arrêts totalement différents)
+//    -> il ne faut surtout PAS les fusionner, ce sont deux destinations distinctes.
+// On tranche en comparant les arrêts réels des trajets : un intitulé est fusionnable avec un
+// autre seulement si la suite d'arrêts de l'un est un préfixe exact de l'autre.
+function pathOfTrip(tripId) {
+  return gtfs.getStoptimes({ trip_id: tripId }, [], [['stop_sequence', 'ASC']]).map((s) => s.stop_id);
+}
+function isPrefixCompatible(a, b) {
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length > 0 && shorter.every((id, i) => longer[i] === id);
+}
+
+// Pour un groupe route+direction ayant plusieurs intitulés, renvoie headsign -> clé de cluster
+// (un intitulé représentatif du cluster). `repTripByHeadsign` : Map<headsign, trip_id le plus long>.
+function computeMergeClusters(repTripByHeadsign) {
+  const headsigns = [...repTripByHeadsign.keys()];
+  const pathByHeadsign = new Map(headsigns.map((h) => [h, pathOfTrip(repTripByHeadsign.get(h))]));
+
+  const parent = new Map(headsigns.map((h) => [h, h]));
+  const find = (h) => { while (parent.get(h) !== h) h = parent.get(h); return h; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+
+  for (let i = 0; i < headsigns.length; i++) {
+    for (let j = i + 1; j < headsigns.length; j++) {
+      if (isPrefixCompatible(pathByHeadsign.get(headsigns[i]), pathByHeadsign.get(headsigns[j]))) {
+        union(headsigns[i], headsigns[j]);
+      }
+    }
+  }
+  return new Map(headsigns.map((h) => [h, find(h)]));
+}
+
+app.get('/api/schedule/:stopId', (req, res) => {
+  try {
+    const stopId = req.params.stopId;
+    const date = todayServiceDate();
+    const cacheKey = `${stopId}|${date}`;
+    const cached = scheduleCache.get(cacheKey);
+    if (cached) return res.json(cached);
+
+    const stoptimes = gtfs.getStoptimes({ stop_id: stopId, date }, [], [['departure_time', 'ASC']]);
+    const tripIds = [...new Set(stoptimes.map((s) => s.trip_id))];
+    const tripById = new Map(gtfs.getTrips({ trip_id: tripIds }).map((t) => [t.trip_id, t]));
+
+    // Quelques trajets candidats par (route, direction, intitulé) — beaucoup de trajets d'un
+    // même intitulé sont en fait des courses partielles (ex. certains "Mosson" ne font que les
+    // 4 derniers arrêts) : il faut comparer le tracé le plus LONG de chaque intitulé, sinon la
+    // comparaison de préfixe est faussée par une course tronquée. On limite à 5 candidats par
+    // intitulé pour ne pas interroger tous les trajets d'une grosse journée.
+    const candidatesByRouteDir = new Map(); // "route|dir" -> Map<headsign, [trip_id, ...]>
+    for (const trip of tripById.values()) {
+      const key = `${trip.route_id}|${trip.direction_id ?? '?'}`;
+      const headsign = trip.trip_headsign || 'Terminus';
+      if (!candidatesByRouteDir.has(key)) candidatesByRouteDir.set(key, new Map());
+      const bucket = candidatesByRouteDir.get(key);
+      if (!bucket.has(headsign)) bucket.set(headsign, []);
+      const list = bucket.get(headsign);
+      if (list.length < 5) list.push(trip.trip_id);
+    }
+    const longestOf = (tripIdCandidates) => {
+      let best = tripIdCandidates[0], bestLen = -1;
+      for (const id of tripIdCandidates) {
+        const n = gtfs.getStoptimes({ trip_id: id }).length;
+        if (n > bestLen) { bestLen = n; best = id; }
+      }
+      return best;
+    };
+
+    // clé "route|direction|headsign" -> clé de cluster fusionné
+    const mergeKeyOf = new Map();
+    for (const [routeDirKey, headsignToCandidates] of candidatesByRouteDir) {
+      if (headsignToCandidates.size <= 1) {
+        for (const headsign of headsignToCandidates.keys()) mergeKeyOf.set(`${routeDirKey}|${headsign}`, `${routeDirKey}|${headsign}`);
+        continue;
+      }
+      const headsignToTrip = new Map(
+        [...headsignToCandidates].map(([headsign, candidates]) => [headsign, longestOf(candidates)])
+      );
+      const clusters = computeMergeClusters(headsignToTrip);
+      for (const [headsign, clusterId] of clusters) {
+        mergeKeyOf.set(`${routeDirKey}|${headsign}`, `${routeDirKey}|${clusterId}`);
+      }
+    }
+
+    const schedule = stoptimes.map((s) => {
+      const trip = tripById.get(s.trip_id);
+      // GTFS autorise "25:14:00" pour 1h14 après minuit -> on normalise pour l'affichage
+      // tout en gardant minutesOfDay (>= 1440 possible) pour trier/comparer avec "maintenant".
+      const [h, m] = s.departure_time.split(':').map(Number);
+      const routeId = trip?.route_id ?? '?';
+      const directionId = trip?.direction_id ?? null;
+      const headsign = trip?.trip_headsign || 'Terminus';
+      const routeDirKey = `${routeId}|${directionId ?? '?'}`;
+      return {
+        routeId,
+        tripId: s.trip_id,
+        headsign,
+        // Clé de regroupement pré-calculée côté serveur (raccourcis fusionnés, vraies
+        // branches -comme Lattes Centre / Pérols Étang de l'Or sur la ligne 3- gardées à part).
+        mergeKey: mergeKeyOf.get(`${routeDirKey}|${headsign}`) || `${routeDirKey}|${headsign}`,
+        time: `${String(h % 24).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+        minutesOfDay: h * 60 + m,
+      };
+    });
+
+    scheduleCache.set(cacheKey, schedule);
+    res.json(schedule);
+  } catch (error) {
+    console.error('[schedule]', error.message);
+    res.status(500).json({ error: 'Horaires indisponibles' });
+  }
 });
 
 io.on('connection', (socket) => {
@@ -245,12 +424,26 @@ async function startServer() {
   await loadShapesInServerMemory();
   await loadStopsInServerMemory();
 
+  // Tant qu'on n'a pas reçu une version fraîche de la TAM (source encore vide ou repli sur
+  // le cache local), on retente en tâche de fond -> dès que leur fichier redevient valide,
+  // le tracé se répare tout seul, sans redémarrage.
+  if (shapesSource !== 'live') {
+    const shapesRetryTimer = setInterval(async () => {
+      await loadShapesInServerMemory();
+      if (shapesSource === 'live') clearInterval(shapesRetryTimer);
+    }, 10 * 60 * 1000);
+    shapesRetryTimer.unref();
+  }
+
   // Réimport GTFS statique en tâche de fond (1×/jour). Après chaque réimport, les caches
-  // indexés par trip_id sont vidés et la liste des arrêts est reconstruite.
+  // indexés par trip_id sont vidés, la liste des arrêts reconstruite, et le tracé des lignes
+  // rafraîchi (travaux, nouvelle ligne...) même si on tournait déjà sur une source "live".
   scheduleGtfsReimport(async () => {
     headsignCache.clear();
     clearStaticCache();
+    scheduleCache.clear();
     await loadStopsInServerMemory();
+    await loadShapesInServerMemory();
   });
 
   // Une seule horloge : le worker récupère les positions toutes les 30 s et nous prévient.

@@ -13,6 +13,17 @@ const LINE_NAMES = { '1': 'Mosson ↔ Odysseum', '2': 'Jacou ↔ St-Jean-de-Véd
 const map = L.map('map', { zoomControl: false }).setView([43.6085, 3.8767], 13);
 map.attributionControl.setPrefix('');
 
+// flyTo() calcule sa trajectoire en pixels : si le conteneur a une taille nulle (onglet en
+// arrière-plan pas encore rendu, WebView Capacitor pas encore posée...), Leaflet lève
+// "Invalid LatLng object (NaN, NaN)". On centre alors sans animation plutôt que de planter.
+function safeFlyTo(latlng, zoom, opts) {
+  try { map.flyTo(latlng, zoom, opts); }
+  catch (e) {
+    console.warn('flyTo indisponible, recentrage direct :', e.message);
+    try { map.setView(latlng, zoom); } catch { /* conteneur pas encore mesurable : on abandonne juste le recentrage */ }
+  }
+}
+
 const STYLES = {
   light: 'https://tiles.openfreemap.org/styles/positron',
   dark: 'https://tiles.openfreemap.org/styles/dark',
@@ -202,7 +213,7 @@ resultsEl.addEventListener('click', (e) => {
   searchInput.value = name;
   searchInput.blur();
   document.getElementById('search-clear').hidden = false;
-  if (circle) { map.flyTo(circle.getLatLng(), 16, { duration: 0.8 }); openStop(stopsByName[name], circle); }
+  if (circle) { safeFlyTo(circle.getLatLng(), 16, { duration: 0.8 }); openStop(stopsByName[name], circle); }
 });
 document.getElementById('search-clear').addEventListener('click', () => {
   searchInput.value = ''; resultsEl.hidden = true; document.getElementById('search-clear').hidden = true; searchInput.focus();
@@ -213,10 +224,30 @@ const arrSheet = createSheet(document.getElementById('arrivals-sheet'), { onClos
 const sheetTitle = document.getElementById('sheet-title');
 const sheetSub = document.getElementById('sheet-sub');
 const sheetBody = document.getElementById('sheet-body');
+const arrTabsEl = document.getElementById('arr-tabs');
 document.getElementById('sheet-close').addEventListener('click', () => arrSheet.close());
-sheetBody.addEventListener('click', (e) => { if (e.target.closest('[data-retry]')) refetchArrivals(); });
+sheetBody.addEventListener('click', (e) => {
+  if (!arr) return;
+  const destBtn = e.target.closest('.dest-chip');
+  if (destBtn) { arr.dayDest = destBtn.dataset.dest; renderArrivals(); return; }
+  if (e.target.closest('[data-retry]')) {
+    if (arr.tab === 'day') fetchSchedule(); else refetchArrivals();
+  }
+});
+arrTabsEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn || !arr) return;
+  arr.tab = btn.dataset.tab;
+  [...arrTabsEl.children].forEach(b => { b.classList.toggle('active', b === btn); b.setAttribute('aria-selected', b === btn); });
+  if (arr.tab === 'day' && arr.schedule === null) fetchSchedule();
+  else renderArrivals();
+});
 
-let arr = null; // { station, data, fetchT, tickT }
+const lineOf = (routeId) => String(routeId).replace(/^0+/, '') || '?';
+const lineCls = (l) => ['1', '2', '3', '4', '5'].includes(l) ? `l${l}` : '';
+const skeletonHtml = (n = 4) => `<div class="skeleton">${'<div class="skeleton-row"></div>'.repeat(n)}</div>`;
+
+let arr = null; // { station, tab, data, schedule, fetchT, tickT }
 
 function stopIcon(sel) {
   return L.divIcon({ className: '', html: `<div class="stop-dot${sel ? ' sel' : ''}"></div>`, iconSize: [16, 16], iconAnchor: [8, 8] });
@@ -234,13 +265,14 @@ async function openStop(station, circle) {
   closeStop();
   selectedStop = circle || null;
   circle?.setIcon(stopIcon(true));
-  arr = { station, data: [] };
+  arr = { station, tab: 'next', data: [], schedule: null, dayDest: null };
+  [...arrTabsEl.children].forEach((b, i) => { b.classList.toggle('active', i === 0); b.setAttribute('aria-selected', i === 0); });
 
   sheetTitle.textContent = station.name;
   let dist = null;
   if (userCoords) dist = map.distance([userCoords.lat, userCoords.lon], [station.lat, station.lon]);
   sheetSub.textContent = dist != null ? `à ${fmtDist(dist)} · temps réel TAM` : 'temps réel TAM';
-  sheetBody.innerHTML = `<div class="skeleton">${'<div class="skeleton-row"></div>'.repeat(4)}</div>`;
+  sheetBody.innerHTML = skeletonHtml();
   arrSheet.open();
 
   await refetchArrivals();
@@ -249,6 +281,7 @@ async function openStop(station, circle) {
   arr.tickT = setInterval(renderArrivals, 10000);
 }
 
+// --- Onglet "Prochains trams" : temps réel, décompte live ---
 async function refetchArrivals() {
   const st = arr; if (!st) return;
   try {
@@ -261,30 +294,133 @@ async function refetchArrivals() {
       .sort((a, b) => (a.epoch || a.minutes) - (b.epoch || b.minutes));
     renderArrivals();
   } catch {
-    if (arr === st) sheetBody.innerHTML = `<div class="sheet-error">Info momentanément indisponible.<button data-retry>Réessayer</button></div>`;
+    if (arr === st && arr.tab === 'next') sheetBody.innerHTML = `<div class="sheet-error">Info momentanément indisponible.<button data-retry>Réessayer</button></div>`;
   }
 }
 
-function renderArrivals() {
-  const st = arr; if (!st || !arrSheet.isOpen()) return;
+function renderNextTab() {
+  const st = arr;
   if (!st.data.length) {
     sheetBody.innerHTML = `<p class="sheet-empty">Aucun passage prévu dans les 90 prochaines minutes.</p>`;
     return;
   }
   const now = Date.now() / 1000;
-  sheetBody.innerHTML = st.data.slice(0, 6).map(t => {
-    const line = String(t.routeId).replace(/^0+/, '') || '?';
-    const cls = ['1', '2', '3', '4', '5'].includes(line) ? `l${line}` : '';
-    const mins = t.epoch ? Math.max(0, Math.round((t.epoch - now) / 60)) : t.minutes;
-    const eta = mins <= 0
-      ? `<span class="arr-eta soon">à l'approche</span>`
-      : `<span class="arr-eta">${mins} min</span>`;
-    return `<div class="arr-row">
-        <span class="line-badge ${cls}">${escapeHtml(line)}</span>
-        <span class="arr-dest">vers ${escapeHtml(t.headsign || '—')}</span>
-        ${eta}
-      </div>`;
-  }).join('');
+  const withMins = st.data.map(t => ({
+    ...t,
+    line: lineOf(t.routeId),
+    mins: t.epoch ? Math.max(0, Math.round((t.epoch - now) / 60)) : t.minutes,
+  }));
+
+  // Regroupé par ligne, 3 passages maximum par ligne (déjà triés par heure), lignes
+  // ordonnées par prochain passage.
+  const byLine = new Map();
+  withMins.forEach(t => {
+    if (!byLine.has(t.line)) byLine.set(t.line, []);
+    const list = byLine.get(t.line);
+    if (list.length < 3) list.push(t);
+  });
+  const lineList = [...byLine.entries()].sort((a, b) => (a[1][0]?.mins ?? 0) - (b[1][0]?.mins ?? 0));
+
+  sheetBody.innerHTML = lineList.map(([line, arrivals]) => `
+      <div class="next-line-group">
+        <div class="next-line-head"><span class="line-badge ${lineCls(line)}">${escapeHtml(line)}</span></div>
+        ${arrivals.map(t => `<div class="arr-row">
+            <span class="arr-dest">vers ${escapeHtml(t.headsign || '—')}</span>
+            ${t.mins <= 0 ? `<span class="arr-eta soon">à l'approche</span>` : `<span class="arr-eta">${t.mins} min</span>`}
+          </div>`).join('')}
+      </div>`).join('');
+}
+
+// --- Onglet "Toute la journée" : horaires théoriques GTFS, façon tableau papier ---
+async function fetchSchedule() {
+  const st = arr; if (!st) return;
+  sheetBody.innerHTML = skeletonHtml(6);
+  try {
+    const lots = await Promise.all(st.station.ids.map(id =>
+      fetch(`${API_BASE}/api/schedule/${id}`).then(r => r.json()).catch(() => [])));
+    if (arr !== st) return;
+    const seen = new Set();
+    st.schedule = lots.flat().filter(s => { if (seen.has(s.tripId)) return false; seen.add(s.tripId); return true; });
+    renderArrivals();
+  } catch {
+    if (arr === st) sheetBody.innerHTML = `<div class="sheet-error">Horaires indisponibles.<button data-retry>Réessayer</button></div>`;
+  }
+}
+
+function renderDayTab() {
+  const st = arr;
+  if (st.schedule === null) return; // chargement en cours, skeleton déjà affiché
+  if (!st.schedule.length) {
+    sheetBody.innerHTML = `<p class="sheet-empty">Aucun horaire disponible pour aujourd'hui.</p>`;
+    return;
+  }
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  // Regroupement selon `mergeKey`, calculé côté serveur à partir du tracé réel des trajets :
+  // deux intitulés ne sont mis ensemble que si l'un est un raccourci/prolongement exact de
+  // l'autre (même tracé, arrêt plus tôt ou plus tard). Une vraie branche (ex. ligne 3 :
+  // Lattes Centre / Pérols Étang de l'Or, qui divergent après Soriech) reste séparée.
+  // Le terminus majoritaire nomme l'onglet, les autres sont soulignés (intitulé exact au
+  // survol/appui long).
+  const groups = new Map();
+  st.schedule.forEach(s => {
+    const line = lineOf(s.routeId);
+    const key = s.mergeKey || `${line}|${s.headsign}`;
+    if (!groups.has(key)) groups.set(key, { key, line, items: [], headsignCounts: new Map() });
+    const g = groups.get(key);
+    g.items.push(s);
+    g.headsignCounts.set(s.headsign, (g.headsignCounts.get(s.headsign) || 0) + 1);
+  });
+  groups.forEach(g => {
+    const byCount = [...g.headsignCounts.entries()].sort((a, b) => b[1] - a[1]);
+    g.primary = byCount[0]?.[0] || '—';
+    g.variants = byCount.slice(1); // [[headsign, count], ...] : terminus minoritaires
+  });
+  const groupList = [...groups.values()].sort((a, b) => (a.items[0]?.minutesOfDay ?? 0) - (b.items[0]?.minutesOfDay ?? 0));
+
+  // Sous-onglet de destination sélectionné : on garde celui déjà choisi tant qu'il existe
+  // encore dans la liste, sinon on retombe sur le premier (le plus proche dans le temps).
+  if (!groupList.some(g => g.key === st.dayDest)) st.dayDest = groupList[0]?.key;
+  const active = groupList.find(g => g.key === st.dayDest);
+
+  const tabsHtml = `<div class="dest-tabs">${groupList.map(g => `
+      <button class="dest-chip${g.key === st.dayDest ? ' active' : ''}" data-dest="${escapeHtml(g.key)}" style="--chip:var(--line-${g.line})">
+        <span class="line-badge ${lineCls(g.line)}">${escapeHtml(g.line)}</span>${escapeHtml(g.primary)}
+      </button>`).join('')}</div>`;
+
+  let tableHtml = '';
+  let legendHtml = '';
+  if (active) {
+    const byHour = new Map();
+    active.items.forEach(s => {
+      const h = Math.floor(s.minutesOfDay / 60) % 24;
+      if (!byHour.has(h)) byHour.set(h, []);
+      byHour.get(h).push(s);
+    });
+    const rows = [...byHour.keys()].sort((a, b) => a - b).map(h => {
+      const mins = `<span class="day-mins">${byHour.get(h).map(s => {
+        const isVariant = s.headsign !== active.primary;
+        const cls = `min-chip${s.minutesOfDay < nowMin ? ' past' : ''}${isVariant ? ' variant' : ''}`;
+        const title = isVariant ? ` title="s'arrête à ${escapeHtml(s.headsign)}"` : '';
+        return `<span class="${cls}"${title}>${String(s.minutesOfDay % 60).padStart(2, '0')}</span>`;
+      }).join('')}</span>`;
+      return `<div class="day-row${h === now.getHours() ? ' now' : ''}"><span class="day-hour">${String(h).padStart(2, '0')} h</span>${mins}</div>`;
+    }).join('');
+    tableHtml = `<div class="day-table">${rows}</div>`;
+
+    if (active.variants.length) {
+      const list = active.variants.map(([hs, n]) => `${escapeHtml(hs)} (${n})`).join(' · ');
+      legendHtml = `<p class="day-legend">Passages <span class="variant-sample">soulignés</span> : s'arrêtent à ${list}</p>`;
+    }
+  }
+
+  sheetBody.innerHTML = `${tabsHtml}${tableHtml}${legendHtml}`;
+}
+
+function renderArrivals() {
+  if (!arr || !arrSheet.isOpen()) return;
+  if (arr.tab === 'day') renderDayTab(); else renderNextTab();
 }
 
 // ============================ MENU ============================
@@ -330,14 +466,14 @@ function initGeoloc() {
     L.marker([userCoords.lat, userCoords.lon], {
       icon: L.divIcon({ className: '', html: '<div class="me-dot"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }),
     }).addTo(meLayer);
-    if (firstFix) { map.flyTo([userCoords.lat, userCoords.lon], 15, { duration: 1.2 }); firstFix = false; }
+    if (firstFix) { safeFlyTo([userCoords.lat, userCoords.lon], 15, { duration: 1.2 }); firstFix = false; }
   }, (err) => {
     console.warn('GPS indisponible :', err.message);
     locateBtn.classList.remove('is-on');
   }, { enableHighAccuracy: true, maximumAge: 10000 });
 }
 locateBtn.addEventListener('click', () => {
-  if (userCoords) map.flyTo([userCoords.lat, userCoords.lon], 16, { duration: 0.8 });
+  if (userCoords) safeFlyTo([userCoords.lat, userCoords.lon], 16, { duration: 0.8 });
   else initGeoloc();
 });
 
